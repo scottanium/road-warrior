@@ -88,7 +88,7 @@ function persist(){ SS("pt_lab_cur", Lay); }
 function svgTable(esc){ const S = 10, rail = 4.5, L = T.L, W = T.W; const land = matchMedia("(orientation: landscape)").matches || window.innerWidth > 700;
   const vw = (L + 2 * rail) * S, vh = (W + 2 * rail) * S;
   const g = land ? `translate(${rail * S},${rail * S}) scale(${S})` : `translate(${vh - rail * S},${rail * S}) rotate(90) scale(${S})`;
-  let s = `<svg id="labsvg" viewBox="0 0 ${land ? vw : vh} ${land ? vh : vw}" style="width:100%;height:auto;touch-action:none;display:block;border-radius:12px;background:#4a2c17">`;
+  let s = `<svg id="labsvg" viewBox="0 0 ${land ? vw : vh} ${land ? vh : vw}" style="width:100%;height:auto;touch-action:pan-x pan-y pinch-zoom;display:block;border-radius:12px;background:#4a2c17">`;
   s += `<g id="labg" transform="${g}"><rect x="0" y="0" width="${L}" height="${W}" fill="#1f6f43"/>`;
   for (let i = 1; i < 8; i++) s += `<circle cx="${L * i / 8}" cy="${-rail / 2}" r=".45" fill="#eee"/><circle cx="${L * i / 8}" cy="${W + rail / 2}" r=".45" fill="#eee"/>`;
   for (let i = 1; i < 4; i++) s += `<circle cx="${-rail / 2}" cy="${W * i / 4}" r=".45" fill="#eee"/><circle cx="${L + rail / 2}" cy="${W * i / 4}" r=".45" fill="#eee"/>`;
@@ -140,6 +140,7 @@ window.renderLab = function($, esc, save, st){
     const svg = $("#labsvg"), g = $("#labg"); let drag = null, el = null, moved = false, start = null, cur = null;
     const toModel = (ev) => { const pt = svg.createSVGPoint(); pt.x = ev.clientX; pt.y = ev.clientY; const q = pt.matrixTransform(g.getScreenCTM().inverse()); return [q.x, q.y]; };
     const posOf = (d) => d === "cb" ? Lay.cb : d === "tgt" ? Lay.target : [Lay.balls[+d.slice(1)].x, Lay.balls[+d.slice(1)].y];
+    svg.addEventListener("touchstart", (ev) => { if (ev.target.closest && ev.target.closest("[data-drag]")) ev.preventDefault(); }, { passive: false });
     svg.addEventListener("pointerdown", (ev) => { el = ev.target.closest("[data-drag]"); if (!el) return; drag = el.dataset.drag; moved = false; start = toModel(ev); cur = posOf(drag).slice(); svg.setPointerCapture(ev.pointerId); ev.preventDefault(); });
     svg.addEventListener("pointermove", (ev) => { if (!drag) return; const m = toModel(ev), o = posOf(drag); if (!moved && Math.hypot(m[0] - start[0], m[1] - start[1]) < 0.8) return; moved = true;
       cur = [Math.max(R, Math.min(T.L - R, o[0] + m[0] - start[0])), Math.max(R, Math.min(T.W - R, o[1] + m[1] - start[1]))];
