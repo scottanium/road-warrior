@@ -85,10 +85,13 @@ let T, Lay, sel = null, res = null, showIdx = 0;
 const defLayout = () => ({ size: "9", cb: [25, 25], balls: [{ n: 1, x: 70, y: 18 }], ob: 1, pocket: "auto", target: [60, 34], name: "", notes: "" });
 function load(){ Lay = LS("pt_lab_cur", null) || defLayout(); T = TABLES[Lay.size] || TABLES["9"]; }
 function persist(){ SS("pt_lab_cur", Lay); }
+const LOCKSVG = (on) => on ? '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="10.5" width="14" height="10" rx="2.2" fill="currentColor"/><path d="M8 10.5V8a4 4 0 0 1 8 0v2.5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg>' : '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="10.5" width="14" height="10" rx="2.2" fill="none" stroke="currentColor" stroke-width="2"/><path d="M8 10.5V8a4 4 0 0 1 7.7-1.5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg>';
+const isLocked = () => !!LS("pt_lab_lock", false);
 function svgTable(esc){ const S = 10, rail = 4.5, L = T.L, W = T.W; const land = matchMedia("(orientation: landscape)").matches || window.innerWidth > 700;
   const vw = (L + 2 * rail) * S, vh = (W + 2 * rail) * S;
   const g = land ? `translate(${rail * S},${rail * S}) scale(${S})` : `translate(${vh - rail * S},${rail * S}) rotate(90) scale(${S})`;
-  let s = `<svg id="labsvg" viewBox="0 0 ${land ? vw : vh} ${land ? vh : vw}" style="width:100%;height:auto;touch-action:pan-x pan-y pinch-zoom;display:block;border-radius:12px;background:#4a2c17">`;
+  const lk = isLocked();
+  let s = `<div class="labwrap ${land ? "land" : "port"}"><div class="labtbl"><svg id="labsvg" class="${lk ? "locked" : ""}" viewBox="0 0 ${land ? vw : vh} ${land ? vh : vw}" style="width:100%;height:auto;touch-action:pan-x pan-y pinch-zoom;display:block;border-radius:12px;background:#4a2c17" aria-label="Pool table${lk ? " (locked: balls can't be moved)" : ""}">`;
   s += `<g id="labg" transform="${g}"><rect x="0" y="0" width="${L}" height="${W}" fill="#1f6f43"/>`;
   for (let i = 1; i < 8; i++) s += `<circle cx="${L * i / 8}" cy="${-rail / 2}" r=".45" fill="#eee"/><circle cx="${L * i / 8}" cy="${W + rail / 2}" r=".45" fill="#eee"/>`;
   for (let i = 1; i < 4; i++) s += `<circle cx="${-rail / 2}" cy="${W * i / 4}" r=".45" fill="#eee"/><circle cx="${L + rail / 2}" cy="${W * i / 4}" r=".45" fill="#eee"/>`;
@@ -99,7 +102,7 @@ function svgTable(esc){ const S = 10, rail = 4.5, L = T.L, W = T.W; const land =
   if (Lay.target) s += `<g data-drag="tgt"><circle cx="${Lay.target[0]}" cy="${Lay.target[1]}" r="2.2" fill="#ffffff18" stroke="#fff" stroke-width=".25" stroke-dasharray=".8 .5"/><path d="M${Lay.target[0] - 1},${Lay.target[1]} h2 M${Lay.target[0]},${Lay.target[1] - 1} v2" stroke="#fff" stroke-width=".25"/></g>`;
   for (const b of Lay.balls){ const c = ballCol(b.n), st = b.n > 8; s += `<g data-drag="b${Lay.balls.indexOf(b)}">` + (st ? `<circle cx="${b.x}" cy="${b.y}" r="${R}" fill="#fafafa"/><clipPath id="cl${b.x | 0}_${b.y | 0}"><rect x="${b.x - R}" y="${b.y - R * .55}" width="${2 * R}" height="${R * 1.1}"/></clipPath><circle cx="${b.x}" cy="${b.y}" r="${R}" fill="${c}" clip-path="url(#cl${b.x | 0}_${b.y | 0})"/>` : `<circle cx="${b.x}" cy="${b.y}" r="${R}" fill="${b.n ? c : "#9e9e9e"}"/>`) + `<circle cx="${b.x}" cy="${b.y}" r="${R}" fill="none" stroke="${sel === b ? "#ffd54f" : b.n === Lay.ob ? "#fff" : "#0006"}" stroke-width="${sel === b || b.n === Lay.ob ? .35 : .12}"/><text x="${b.x}" y="${b.y + .42}" font-size="1.15" text-anchor="middle" fill="${b.n === 8 || b.n === 2 || b.n === 4 || b.n === 7 ? "#fff" : "#000"}" font-family="system-ui" font-weight="700" ${land ? "" : `transform="rotate(-90 ${b.x} ${b.y})"`}>${b.n || "?"}</text></g>`; }
   if (Lay.cb) s += `<g data-drag="cb"><circle cx="${Lay.cb[0]}" cy="${Lay.cb[1]}" r="${R}" fill="#fffef5" stroke="${sel === "cb" ? "#ffd54f" : "#0006"}" stroke-width=".2"/></g>`;
-  return s + `</g></svg>`; }
+  return s + `</g></svg></div><div class="labrail"><button type="button" id="lablock" class="lablock ${lk ? "on" : ""}" aria-pressed="${lk}" aria-label="${lk ? "Table locked. Tap to unlock and move balls" : "Table unlocked. Tap to lock so balls can't move"}">${LOCKSVG(lk)}<span>${lk ? "Locked" : "Unlocked"}</span></button><div class="labgrip" aria-hidden="true"><span class="gl"></span><b>↕</b><span class="gt">Scroll</span><span class="gl"></span></div></div></div>`; }
 
 window.renderLab = function($, esc, save, st){
   load();
@@ -114,7 +117,7 @@ window.renderLab = function($, esc, save, st){
     const used = new Set(Lay.balls.map((b) => b.n));
     let h = `<div class="callout warnc"><b>Approximate training aid, not a physics simulator.</b> Paths use simple friction, rail-bounce and throw models from published trends (Dr. Dave TPs); real cloth, balls, cushions and your stroke will differ. Use it to plan, then test on the table.</div>`;
     h += `<div class="row"><select id="lsize">${Object.entries(TABLES).map(([k, t]) => `<option value="${k}" ${Lay.size === k ? "selected" : ""}>${t.name}</option>`).join("")}</select><select id="lpk"><option value="auto">Pocket: best (auto)</option>${pockets(T).map((p) => `<option value="${p[0]}" ${Lay.pocket === p[0] ? "selected" : ""}>Pocket: ${({TL:"top-left corner",TS:"top side",TR:"top-right corner",BL:"bottom-left corner",BS:"bottom side",BR:"bottom-right corner"})[p[0]]}</option>`).join("")}</select></div>`;
-    h += `<div id="tblwrap">${svgTable(esc)}</div><div class="meta">Drag the cue ball, balls and the dashed target ring (where you want the cue ball to finish). Tap a ball to select it. Rotate the phone for a bigger landscape table.</div>`;
+    h += `<div id="tblwrap">${svgTable(esc)}</div><div class="meta">Drag the cue ball, balls and the dashed target ring (where you want the cue ball to finish). Tap a ball to select it. To scroll, drag the strip beside the table, the brown rail or the felt, or lock the table with the padlock. Rotate the phone for a bigger landscape table.</div>`;
     h += `<div class="chips" id="addb">${[...Array(15)].map((_, i) => i + 1).map((n) => `<button class="chip ${used.has(n) ? "on" : ""}" data-n="${n}" style="${used.has(n) ? `background:${ballCol(n)};border-color:${ballCol(n)};color:${[2,4,7,8].includes(n > 8 ? n - 8 : n) ? "#fff" : "#000"}` : ""}">${n}</button>`).join("")}</div><div class="meta">Tap a number to add or remove that ball.</div>`;
     if (sel && sel !== "cb") h += `<div class="card"><b>Selected: ball ${sel.n || "?"}</b><div class="row"><button class="btn" id="mkob">Make object ball</button><select id="setn"><option value="">Set number…</option>${[...Array(15)].map((_, i) => `<option value="${i + 1}">${i + 1}</option>`).join("")}</select><button class="btn ghost" id="delb">Remove</button></div></div>`;
     if (!res.ok) h += `<div class="callout">${esc(res.msg)}</div>`;
@@ -140,8 +143,12 @@ window.renderLab = function($, esc, save, st){
     const svg = $("#labsvg"), g = $("#labg"); let drag = null, el = null, moved = false, start = null, cur = null;
     const toModel = (ev) => { const pt = svg.createSVGPoint(); pt.x = ev.clientX; pt.y = ev.clientY; const q = pt.matrixTransform(g.getScreenCTM().inverse()); return [q.x, q.y]; };
     const posOf = (d) => d === "cb" ? Lay.cb : d === "tgt" ? Lay.target : [Lay.balls[+d.slice(1)].x, Lay.balls[+d.slice(1)].y];
-    svg.addEventListener("touchstart", (ev) => { if (ev.target.closest && ev.target.closest("[data-drag]")) ev.preventDefault(); }, { passive: false });
-    svg.addEventListener("pointerdown", (ev) => { el = ev.target.closest("[data-drag]"); if (!el) return; drag = el.dataset.drag; moved = false; start = toModel(ev); cur = posOf(drag).slice(); svg.setPointerCapture(ev.pointerId); ev.preventDefault(); });
+    // iOS: only a touch that starts on a ball (table unlocked) is claimed; everything else scrolls the page.
+    const onBall = (ev) => !isLocked() && ev.target && ev.target.closest && ev.target.closest("[data-drag]");
+    svg.addEventListener("touchstart", (ev) => { if (onBall(ev)) ev.preventDefault(); }, { passive: false });
+    svg.addEventListener("touchmove", (ev) => { if (drag) ev.preventDefault(); }, { passive: false });
+    $("#lablock").onclick = () => { SS("pt_lab_lock", !isLocked()); if (isLocked()) sel = null; draw(); };
+    svg.addEventListener("pointerdown", (ev) => { if (!onBall(ev)) { el = null; drag = null; return; } el = ev.target.closest("[data-drag]"); drag = el.dataset.drag; moved = false; start = toModel(ev); cur = posOf(drag).slice(); svg.setPointerCapture(ev.pointerId); ev.preventDefault(); });
     svg.addEventListener("pointermove", (ev) => { if (!drag) return; const m = toModel(ev), o = posOf(drag); if (!moved && Math.hypot(m[0] - start[0], m[1] - start[1]) < 0.8) return; moved = true;
       cur = [Math.max(R, Math.min(T.L - R, o[0] + m[0] - start[0])), Math.max(R, Math.min(T.W - R, o[1] + m[1] - start[1]))];
       el.setAttribute("transform", `translate(${cur[0] - o[0]},${cur[1] - o[1]})`); });

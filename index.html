@@ -148,6 +148,20 @@ table.kv td{padding:5px 4px;font-size:14px}
 #mfab{position:fixed;right:12px;bottom:calc(66px + var(--safe-b) + 10px + var(--insh,0px));z-index:11;width:48px;height:48px;border-radius:999px;border:1px solid var(--accent);background:var(--card);color:var(--accent);font-size:22px;font-weight:800;box-shadow:0 4px 14px rgba(0,0,0,.35)}#mfab.on{background:var(--accent);color:#06140d}
 body.money-on #stpill{right:70px}
 @media (prefers-color-scheme: light){#mfab.on{color:#fff}}
+.labwrap{display:flex;gap:8px;align-items:stretch}.labtbl{flex:0 0 84%;max-width:84%;min-width:0}
+.labrail{flex:1;min-width:44px;display:flex;flex-direction:column;gap:8px;touch-action:pan-y;user-select:none;-webkit-user-select:none}
+.lablock{display:flex;flex-direction:column;align-items:center;gap:2px;min-height:56px;padding:6px 2px;border-radius:12px;border:1px solid var(--line);background:var(--card);color:var(--text);font-size:11px;font-weight:700;touch-action:manipulation}
+.lablock svg{width:22px;height:22px}.lablock.on{border-color:#e0b44c;color:#e0b44c;background:rgba(224,180,76,.12)}
+.labgrip{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;border-radius:12px;border:1px dashed var(--line);background:repeating-linear-gradient(0deg,transparent 0 10px,rgba(127,127,127,.08) 10px 12px);color:var(--sub);touch-action:pan-y}
+.labgrip b{font-size:20px;line-height:1}.labgrip .gt{writing-mode:vertical-rl;font-size:12px;letter-spacing:.12em;text-transform:uppercase}.labgrip .gl{width:4px;flex:0 0 36px;border-radius:2px;background:var(--line)}
+#labsvg.locked [data-drag]{touch-action:auto;pointer-events:none;opacity:.7}#labsvg.locked{outline:2px solid rgba(224,180,76,.55);outline-offset:-2px}
+body.labmode .labtbl #labsvg{width:100%!important;max-height:none}
+@media (prefers-color-scheme: light){.lablock.on{color:#8a5a00;border-color:#8a5a00;background:#fff4d6}}
+#ptrefresh{position:absolute;right:12px;top:calc(var(--safe-t) + 8px);z-index:6;width:40px;height:40px;border-radius:999px;border:1px solid var(--line);background:var(--card);color:var(--accent);display:flex;align-items:center;justify-content:center;padding:0}
+#ptrefresh svg{width:20px;height:20px}#ptrefresh.spin svg{animation:ptspin .9s linear infinite}
+@keyframes ptspin{to{transform:rotate(360deg)}}@media (prefers-reduced-motion: reduce){#ptrefresh.spin svg{animation:none}}
+#ptrefmsg{position:absolute;right:58px;top:calc(var(--safe-t) + 14px);z-index:6;background:var(--card);border:1px solid var(--accent);color:var(--text);border-radius:999px;padding:4px 12px;font-size:13px;font-weight:600}#ptrefmsg:empty{display:none}
+header h1{padding-right:48px}
 .wstep.cur{border-color:var(--accent);box-shadow:0 0 0 2px var(--accent)}
 tr.hl td{background:rgba(76,195,138,.15);font-weight:600}
 .menu a{display:flex;align-items:center;gap:12px;padding:14px;border-bottom:1px solid var(--line);color:var(--text);text-decoration:none;font-size:17px}
@@ -177,6 +191,7 @@ body.labmode #labsvg{max-height:calc(100vh - 150px);width:auto!important;max-wid
 <header>
   <h1 id="title">The Road Warrior: Pool Tracker and Trainer</h1>
   <div id="headx"></div>
+  <button type="button" id="ptrefresh" aria-label="Refresh and check for updates" title="Refresh / update"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 12a8 8 0 1 1-2.34-5.66" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/><path d="M20 4v5h-5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg></button><span id="ptrefmsg" role="status" aria-live="polite"></span>
 </header>
 <main id="main"></main>
 <nav class="tabs" id="tabs">
@@ -190,6 +205,7 @@ body.labmode #labsvg{max-height:calc(100vh - 150px);width:auto!important;max-wid
 </nav>
 <script src="legal.js"></script>
 <script src="install.js"></script>
+<script src="update.js"></script>
 <script src="data.js"></script>
 <script src="extra.js"></script>
 <script src="videos.js"></script>
