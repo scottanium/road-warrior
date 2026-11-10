@@ -1,0 +1,76 @@
+// Tournament history log. Stored only on this phone (localStorage "pt_thist").
+(function(){
+const Lg = (k, d) => { try { return JSON.parse(localStorage.getItem(k)) ?? d; } catch (e) { return d; } };
+const Sg = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} };
+const num = (v) => { if (v === "" || v == null) return null; const n = parseFloat(String(v).replace(/[^0-9.\-]/g, "")); return isFinite(n) ? n : null; };
+const money = (n) => (n < 0 ? "−$" : "$") + Math.abs(Math.round(n * 100) / 100).toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 2 });
+const ord = (n) => n + (n % 100 >= 11 && n % 100 <= 13 ? "th" : ["th", "st", "nd", "rd"][n % 10] || "th");
+const H = () => Lg("pt_thist", []), SET = () => Object.assign({ tol: 5 }, Lg("pt_thset", {}));
+const norm = (s) => String(s || "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+function seriesKey(e){ if (/heartlandareabilliardstour/.test(e.src || "") || /^habit|\(habit\)|habit /i.test(e.name || "")) return "habit"; if (e.weekly) return "wk:" + e.id; return "n:" + norm(String(e.name || "").replace(/\b(stop|leg|event|week)\s*\d+\b.*$/i, "").replace(/\b20\d\d\b/g, "")); }
+const venueKey = (e) => norm(e.venue);
+const FIELDS = [["date", "Date", "date"], ["name", "Event name", "text"], ["venue", "Venue", "text"], ["series", "Series / tour", "text"], ["game", "Game", "text"], ["format", "Format", "text"], ["place", "Finish place (1 = won)", "number"], ["players", "Players who showed up", "number"], ["win", "Winnings ($)", "number"], ["calc", "Calcutta / auction share ($, optional)", "number"], ["cost", "Actual costs ($)", "number"], ["notes", "Notes", "textarea"]];
+const net = (h) => (num(h.win) || 0) + (num(h.calc) || 0) - (num(h.cost) || 0);
+function result(n){ const t = +SET().tol || 0; if (Math.abs(n) <= t) return ["even", "➖ Broke even"]; return n > 0 ? ["ok", "✅ Made money"] : ["bad", "❌ Lost money"]; }
+const resTag = (n) => { const r = result(n); return `<span class="tag ${r[0]}">${r[1]}: ${money(n)}</span>`; };
+function matches(e){ const sk = seriesKey(e), vk = venueKey(e); return H().filter((h) => h.evId === e.id || (h.seriesKey && h.seriesKey === sk) || (vk && h.venueKey === vk)).sort((a, b) => (b.date || "").localeCompare(a.date || "")); }
+function suggestAtt(e, cap){ if (!cap) return null; const sk = seriesKey(e); const rows = H().filter((h) => (h.evId === e.id || h.seriesKey === sk) && num(h.players) && num(h.cap)); if (!rows.length) return null; const avg = rows.reduce((s, h) => s + num(h.players) / num(h.cap), 0) / rows.length; return { pct: Math.max(5, Math.min(100, Math.round(avg * 100))), n: rows.length }; }
+function formHTML(esc, pre, fid){ return `<div class="hform" data-hform="${fid}">${FIELDS.map(([k, l, t]) => `<label>${l}${t === "textarea" ? `<textarea data-hk="${k}">${esc(pre[k] ?? "")}</textarea>` : `<input type="${t}" ${t === "number" ? 'inputmode="decimal" step="any"' : ""} data-hk="${k}" value="${esc(pre[k] ?? "")}">`}</label>`).join("")}<div class="meta">Costs are prefilled from the trip calculator; change them to what you really spent.</div><div class="row"><button class="btn" data-hsave="${fid}">Save to history</button></div><div class="meta" data-hmsg="${fid}"></div></div>`; }
+function readForm(fid){ const f = document.querySelector(`[data-hform="${fid}"]`), o = {}; f.querySelectorAll("[data-hk]").forEach((i) => o[i.dataset.hk] = i.value.trim()); return o; }
+function cardHTML(x, esc, st){ const e = x.e, id = esc(e.id), past = matches(e);
+  let h = "";
+  if (past.length) { const l = past[0], n = net(l); h += `<div class="tags"><span class="tag info">🔁 Played before: ${l.place ? ord(+l.place) : "finish not logged"}${l.players ? " of " + l.players : ""} · net ${money(n)} (${esc(l.date || "")})</span></div>`; }
+  const cap = window.Profit ? window.Profit.fieldOf(e) : null, sug = suggestAtt(e, cap);
+  let b = "";
+  if (past.length) b += `<div class="t">Your history at this series / venue (${past.length})</div>` + past.slice(0, 6).map((p) => `<div class="meta">${esc(p.date || "")} · ${esc(p.name || "")} · ${p.place ? ord(+p.place) : "?"}${p.players ? " of " + esc(p.players) : ""} · ${resTag(net(p))}</div>`).join("");
+  if (sug) b += `<div class="callout">Suggested attendance for projections: <b>${sug.pct}%</b> (your logged turnout vs the ${cap}-player cap, ${sug.n} event${sug.n > 1 ? "s" : ""}). <button class="btn ghost" data-hsug="${id}" data-pct="${sug.pct}">Use ${sug.pct}%</button></div>`;
+  const pre = { date: x.occ[0], name: e.name, venue: e.venue, series: seriesKey(e) === "habit" ? "Heartland Area Billiards Tour" : "", game: e.game, format: e.format, players: "", place: "", win: "", calc: "", cost: x.cost ? (Math.round(x.cost.total * 100) / 100).toString() : "", notes: "" };
+  b += `<div class="t" style="margin-top:6px">📝 I played this</div>` + formHTML(esc, pre, "ev:" + id);
+  return h + `<details class="tc" data-hd="${id}" ${st.hOpen && st.hOpen[e.id] ? "open" : ""}><summary>📒 History${past.length ? " (" + past.length + ")" : ""} · I played this</summary><div class="inner">${b}</div></details>`; }
+function save(fid, ev){ const o = readForm(fid); const msg = document.querySelector(`[data-hmsg="${fid}"]`);
+  if (!o.date || !o.name) { if (msg) msg.textContent = "Date and event name are required."; return false; }
+  if (ev) { o.evId = ev.id; o.seriesKey = seriesKey(ev); o.venueKey = venueKey(ev); o.cap = window.Profit ? window.Profit.fieldOf(ev) : null; } else { o.seriesKey = o.series ? "n:" + norm(o.series) : ""; o.venueKey = norm(o.venue); }
+  if (o.series && /heartland|habit/i.test(o.series)) o.seriesKey = "habit";
+  o.id = "h" + Date.now(); const all = H(); all.push(o); Sg("pt_thist", all); return true; }
+function wireCards(st, rerender, items){ st.hOpen = st.hOpen || {};
+  document.querySelectorAll("[data-hd]").forEach((d) => d.ontoggle = () => { st.hOpen[d.dataset.hd] = d.open; });
+  document.querySelectorAll("[data-hsave]").forEach((b) => b.onclick = () => { const fid = b.dataset.hsave, eid = fid.slice(3); const x = items.find((i) => i.e.id === eid); if (save(fid, x && x.e)) { st.hOpen[eid] = true; rerender(); } });
+  document.querySelectorAll("[data-hsug]").forEach((b) => b.onclick = () => { const a = Lg("pt_tpev", {}), u = a[b.dataset.hsug] || {}; u.attend = b.dataset.pct; a[b.dataset.hsug] = u; Sg("pt_tpev", a); rerender(); }); }
+function stats(list){ const n = list.length; if (!n) return null; const nets = list.map(net), cost = list.reduce((s, h) => s + (num(h.cost) || 0), 0), tot = nets.reduce((a, b) => a + b, 0);
+  const itm = list.filter((h) => (num(h.win) || 0) > 0).length, places = list.map((h) => num(h.place)).filter((v) => v), pct = list.filter((h) => num(h.place) && num(h.players) > 1).map((h) => (num(h.players) - num(h.place)) / (num(h.players) - 1) * 100);
+  return { n, itm: itm / n * 100, tot, best: places.length ? Math.min(...places) : null, pct: pct.length ? pct.reduce((a, b) => a + b, 0) / pct.length : null, roi: cost > 0 ? tot / cost * 100 : null }; }
+const CSVK = ["date", "name", "venue", "series", "game", "format", "place", "players", "win", "calc", "cost", "notes", "evId", "seriesKey", "venueKey", "cap", "id"];
+const csvCell = (v) => { const s = String(v ?? ""); return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; };
+function dl(name, text, type){ const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([text], { type })); a.download = name; document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000); }
+function parseCSV(t){ const rows = []; let r = [], f = "", q = false; for (let i = 0; i < t.length; i++) { const c = t[i]; if (q) { if (c === '"') { if (t[i + 1] === '"') { f += '"'; i++; } else q = false; } else f += c; } else if (c === '"') q = true; else if (c === ",") { r.push(f); f = ""; } else if (c === "\n" || c === "\r") { if (c === "\r" && t[i + 1] === "\n") i++; r.push(f); rows.push(r); r = []; f = ""; } else f += c; } if (f || r.length) { r.push(f); rows.push(r); } return rows; }
+function backupAll(){ const o = {}; for (let i = 0; i < localStorage.length; i++) { const k = localStorage.key(i); if (/^pt_|^poolTrainer\./.test(k)) o[k] = localStorage.getItem(k); } return { app: "Pool Trainer", kind: "full backup", made: new Date().toISOString(), data: o }; }
+function restoreAll(j){ if (!j || !j.data) throw 0; Object.entries(j.data).forEach(([k, v]) => { if (/^pt_|^poolTrainer\./.test(k)) localStorage.setItem(k, v); }); }
+function renderScreen($, esc, st, back){
+  const F = Object.assign({ q: "", game: "", res: "", year: "" }, st.hf || {}), all = H();
+  const list = all.filter((h) => (!F.q || norm([h.name, h.venue, h.series, h.notes].join(" ")).includes(norm(F.q))) && (!F.game || norm(h.game).includes(norm(F.game))) && (!F.year || String(h.date || "").startsWith(F.year)) && (!F.res || result(net(h))[0] === F.res)).sort((a, b) => (b.date || "").localeCompare(a.date || ""));
+  const s = stats(list), years = [...new Set(all.map((h) => String(h.date || "").slice(0, 4)).filter(Boolean))].sort().reverse();
+  let h = `<div class="callout">Your tournament history is stored only on this phone. Export it now and then (CSV or JSON), or use the full app backup below.</div>`;
+  h += s ? `<div class="card"><div class="t">Totals (${s.n} event${s.n > 1 ? "s" : ""} shown)</div><table class="kv"><tr><td>In the money</td><td>${s.itm.toFixed(0)}%</td></tr><tr><td>Total net</td><td>${resTag(s.tot)}</td></tr><tr><td>Best finish</td><td>${s.best ? ord(s.best) : "—"}</td></tr><tr><td>Avg finish percentile</td><td>${s.pct != null ? s.pct.toFixed(0) + "% of the field beaten" : "—"}</td></tr><tr><td>ROI</td><td>${s.roi != null ? s.roi.toFixed(0) + "% of costs" : "—"}</td></tr></table></div>` : `<div class="callout">No tournaments logged${all.length ? " match these filters" : " yet"}. Tap “I played this” on an event card, or add a past tournament below.</div>`;
+  h += `<details id="hfl" ${st.hfo ? "open" : ""}><summary>Filters</summary><div class="inner"><div class="row"><input type="text" id="hf_q" placeholder="Search name, venue, series, notes" value="${esc(F.q)}"></div><div class="row"><label>Year<select id="hf_y"><option value="">All</option>${years.map((y) => `<option ${F.year === y ? "selected" : ""}>${y}</option>`).join("")}</select></label><label>Result<select id="hf_r"><option value="">All</option><option value="ok" ${F.res === "ok" ? "selected" : ""}>Made money</option><option value="even" ${F.res === "even" ? "selected" : ""}>Broke even</option><option value="bad" ${F.res === "bad" ? "selected" : ""}>Lost money</option></select></label></div><div class="row"><label>Game<input type="text" id="hf_g" value="${esc(F.game)}" placeholder="e.g. 9-ball"></label><label>Broke-even tolerance ($)<input type="number" id="hf_tol" value="${esc(SET().tol)}" min="0" step="1"></label></div></div></details>`;
+  h += list.map((x) => `<div class="card"><div class="t">${esc(x.name)}</div><div class="meta">${esc(x.date || "")} · ${esc(x.venue || "")}${x.series ? " · " + esc(x.series) : ""}${x.game ? " · " + esc(x.game) : ""}${x.format ? " · " + esc(x.format) : ""}</div><div class="meta">Finish ${x.place ? ord(+x.place) : "?"}${x.players ? " of " + esc(x.players) : ""} · winnings ${money(num(x.win) || 0)}${num(x.calc) ? " + Calcutta " + money(num(x.calc)) : ""} · costs ${money(num(x.cost) || 0)}</div>${resTag(net(x))}${x.notes ? `<div class="desc">${esc(x.notes)}</div>` : ""}<div class="row"><button class="btn ghost" data-hdel="${esc(x.id)}">Delete</button></div></div>`).join("");
+  h += `<details id="hadd" ${st.hadd ? "open" : ""}><summary>＋ Add past tournament</summary><div class="inner">${formHTML(esc, { date: "", name: "" }, "man")}</div></details>`;
+  h += `<div class="card"><div class="t">Export / import</div><div class="row"><button class="btn ghost" id="hx_csv">Export CSV</button><button class="btn ghost" id="hx_json">Export JSON</button><label class="btn ghost">Import CSV/JSON<input type="file" id="hx_imp" accept=".csv,.json,text/csv,application/json" hidden></label></div>
+    <div class="t" style="margin-top:8px">Full app backup</div><div class="meta">Everything this app saves (practice log, plan, Shot Lab layouts, trip and payout inputs, tournament history, settings) in one JSON file.</div><div class="row"><button class="btn ghost" id="hx_all">Download full backup</button><label class="btn ghost">Restore backup<input type="file" id="hx_rest" accept=".json,application/json" hidden></label></div><div class="meta" id="hx_msg"></div></div>`;
+  $("#main").innerHTML = h;
+  const rr = () => renderScreen($, esc, st, back), setF = (k, v) => { F[k] = v; st.hf = F; st.hfo = true; rr(); };
+  $("#hfl").ontoggle = () => { st.hfo = $("#hfl").open; }; $("#hadd").ontoggle = () => { st.hadd = $("#hadd").open; };
+  $("#hf_q").onchange = (e) => setF("q", e.target.value); $("#hf_y").onchange = (e) => setF("year", e.target.value); $("#hf_r").onchange = (e) => setF("res", e.target.value); $("#hf_g").onchange = (e) => setF("game", e.target.value);
+  $("#hf_tol").onchange = (e) => { Sg("pt_thset", { tol: e.target.value }); st.hfo = true; rr(); };
+  document.querySelectorAll("[data-hdel]").forEach((b) => b.onclick = () => { if (!confirm("Delete this entry?")) return; Sg("pt_thist", H().filter((x) => x.id !== b.dataset.hdel)); rr(); });
+  document.querySelector('[data-hsave="man"]').onclick = () => { if (save("man", null)) { st.hadd = false; rr(); } };
+  $("#hx_csv").onclick = () => dl("tournament_history.csv", [CSVK.join(",")].concat(all.map((x) => CSVK.map((k) => csvCell(x[k])).join(","))).join("\n"), "text/csv");
+  $("#hx_json").onclick = () => dl("tournament_history.json", JSON.stringify({ app: "Pool Trainer", kind: "tournament history", entries: all }, null, 1), "application/json");
+  $("#hx_imp").onchange = (ev) => { const f = ev.target.files[0]; if (!f) return; f.text().then((t) => { let arr = [];
+    try { if (/^\s*[\[{]/.test(t)) { const j = JSON.parse(t); arr = Array.isArray(j) ? j : j.entries || []; } else { const rows = parseCSV(t).filter((r) => r.length > 1), hd = rows.shift().map((x) => x.trim()); arr = rows.map((r) => Object.fromEntries(hd.map((k, i) => [k, r[i] ?? ""]))); }
+      const cur = H(), ids = new Set(cur.map((x) => x.id)); let n = 0; arr.forEach((x) => { if (!x || !x.name) return; if (!x.id || ids.has(x.id)) x.id = "h" + Date.now() + "_" + n; cur.push(x); n++; }); Sg("pt_thist", cur); $("#hx_msg").textContent = "Imported " + n + " entries."; setTimeout(rr, 600);
+    } catch (e) { $("#hx_msg").textContent = "Couldn't read that file."; } }); };
+  $("#hx_all").onclick = () => dl("pool_trainer_backup_" + new Date().toISOString().slice(0, 10) + ".json", JSON.stringify(backupAll()), "application/json");
+  $("#hx_rest").onchange = (ev) => { const f = ev.target.files[0]; if (!f) return; f.text().then((t) => { try { restoreAll(JSON.parse(t)); $("#hx_msg").textContent = "Backup restored."; setTimeout(rr, 600); } catch (e) { $("#hx_msg").textContent = "That isn't a Pool Trainer backup."; } }); };
+}
+window.THist = { H, net, result, seriesKey, matches, suggestAtt, cardHTML, wireCards, renderScreen, stats, backupAll, restoreAll };
+})();
