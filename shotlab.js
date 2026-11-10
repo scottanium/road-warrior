@@ -162,7 +162,7 @@ function renderSaved($, esc, save, st){
   $("#main").innerHTML = h;
   document.querySelectorAll("[data-ld]").forEach((b) => b.onclick = () => { SS("pt_lab_cur", all[+b.dataset.ld]); st.labtab = "table"; window.renderLab($, esc, save, st); });
   document.querySelectorAll("[data-del]").forEach((b) => b.onclick = () => { if (confirm("Delete this layout?")) { all.splice(+b.dataset.del, 1); SS("pt_layouts", all); renderSaved($, esc, save, st); } });
-  $("#exp").onclick = () => { const blob = new Blob([JSON.stringify({ app: "Pool Trainer Shot Lab", version: 1, layouts: all }, null, 1)], { type: "application/json" }); const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = "shotlab-layouts.json"; document.body.appendChild(a); a.click(); a.remove(); };
+  $("#exp").onclick = () => { const blob = new Blob([JSON.stringify({ app: "Road Warrior Shot Lab", version: 1, layouts: all }, null, 1)], { type: "application/json" }); const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = "road-warrior-shotlab-layouts.json"; document.body.appendChild(a); a.click(); a.remove(); };
   $("#imp").onchange = (e) => { const f = e.target.files[0]; if (!f) return; f.text().then((t) => { try { const j = JSON.parse(t); const arr = Array.isArray(j) ? j : j.layouts || [j]; const ok = arr.filter((l) => l && l.balls && l.size); SS("pt_layouts", ok.concat(all)); alert("Imported " + ok.length + " layout(s)."); renderSaved($, esc, save, st); } catch (err) { alert("That file isn't a Shot Lab JSON export."); } }); };
 }
 window.ShotLab = { analyze, TABLES, pockets, R, approach, simCB };

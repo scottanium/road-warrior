@@ -43,7 +43,7 @@ const CSVK = ["date", "name", "venue", "series", "game", "format", "place", "pla
 const csvCell = (v) => { const s = String(v ?? ""); return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; };
 function dl(name, text, type){ const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([text], { type })); a.download = name; document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000); }
 function parseCSV(t){ const rows = []; let r = [], f = "", q = false; for (let i = 0; i < t.length; i++) { const c = t[i]; if (q) { if (c === '"') { if (t[i + 1] === '"') { f += '"'; i++; } else q = false; } else f += c; } else if (c === '"') q = true; else if (c === ",") { r.push(f); f = ""; } else if (c === "\n" || c === "\r") { if (c === "\r" && t[i + 1] === "\n") i++; r.push(f); rows.push(r); r = []; f = ""; } else f += c; } if (f || r.length) { r.push(f); rows.push(r); } return rows; }
-function backupAll(){ const o = {}; for (let i = 0; i < localStorage.length; i++) { const k = localStorage.key(i); if (/^pt_|^poolTrainer\./.test(k)) o[k] = localStorage.getItem(k); } return { app: "Pool Trainer", kind: "full backup", made: new Date().toISOString(), data: o }; }
+function backupAll(){ const o = {}; for (let i = 0; i < localStorage.length; i++) { const k = localStorage.key(i); if (/^pt_|^poolTrainer\./.test(k)) o[k] = localStorage.getItem(k); } return { app: "The Road Warrior: Pool Tracker and Trainer", kind: "full backup", made: new Date().toISOString(), data: o }; }
 function restoreAll(j){ if (!j || !j.data) throw 0; Object.entries(j.data).forEach(([k, v]) => { if (/^pt_|^poolTrainer\./.test(k)) localStorage.setItem(k, v); }); }
 function renderScreen($, esc, st, back){
   const F = Object.assign({ q: "", game: "", res: "", year: "" }, st.hf || {}), all = H();
@@ -64,13 +64,13 @@ function renderScreen($, esc, st, back){
   document.querySelectorAll("[data-hdel]").forEach((b) => b.onclick = () => { if (!confirm("Delete this entry?")) return; Sg("pt_thist", H().filter((x) => x.id !== b.dataset.hdel)); rr(); });
   document.querySelector('[data-hsave="man"]').onclick = () => { if (save("man", null)) { st.hadd = false; rr(); } };
   $("#hx_csv").onclick = () => dl("tournament_history.csv", [CSVK.join(",")].concat(all.map((x) => CSVK.map((k) => csvCell(x[k])).join(","))).join("\n"), "text/csv");
-  $("#hx_json").onclick = () => dl("tournament_history.json", JSON.stringify({ app: "Pool Trainer", kind: "tournament history", entries: all }, null, 1), "application/json");
+  $("#hx_json").onclick = () => dl("tournament_history.json", JSON.stringify({ app: "The Road Warrior: Pool Tracker and Trainer", kind: "tournament history", entries: all }, null, 1), "application/json");
   $("#hx_imp").onchange = (ev) => { const f = ev.target.files[0]; if (!f) return; f.text().then((t) => { let arr = [];
     try { if (/^\s*[\[{]/.test(t)) { const j = JSON.parse(t); arr = Array.isArray(j) ? j : j.entries || []; } else { const rows = parseCSV(t).filter((r) => r.length > 1), hd = rows.shift().map((x) => x.trim()); arr = rows.map((r) => Object.fromEntries(hd.map((k, i) => [k, r[i] ?? ""]))); }
       const cur = H(), ids = new Set(cur.map((x) => x.id)); let n = 0; arr.forEach((x) => { if (!x || !x.name) return; if (!x.id || ids.has(x.id)) x.id = "h" + Date.now() + "_" + n; cur.push(x); n++; }); Sg("pt_thist", cur); $("#hx_msg").textContent = "Imported " + n + " entries."; setTimeout(rr, 600);
     } catch (e) { $("#hx_msg").textContent = "Couldn't read that file."; } }); };
-  $("#hx_all").onclick = () => dl("pool_trainer_backup_" + new Date().toISOString().slice(0, 10) + ".json", JSON.stringify(backupAll()), "application/json");
-  $("#hx_rest").onchange = (ev) => { const f = ev.target.files[0]; if (!f) return; f.text().then((t) => { try { restoreAll(JSON.parse(t)); $("#hx_msg").textContent = "Backup restored."; setTimeout(rr, 600); } catch (e) { $("#hx_msg").textContent = "That isn't a Pool Trainer backup."; } }); };
+  $("#hx_all").onclick = () => dl("road_warrior_backup_" + new Date().toISOString().slice(0, 10) + ".json", JSON.stringify(backupAll()), "application/json");
+  $("#hx_rest").onchange = (ev) => { const f = ev.target.files[0]; if (!f) return; f.text().then((t) => { try { restoreAll(JSON.parse(t)); $("#hx_msg").textContent = "Backup restored."; setTimeout(rr, 600); } catch (e) { $("#hx_msg").textContent = "That isn't a Road Warrior (or older Pool Trainer) backup."; } }); };
 }
 window.THist = { H, net, result, seriesKey, matches, suggestAtt, cardHTML, wireCards, renderScreen, stats, backupAll, restoreAll };
 })();

@@ -6,7 +6,7 @@ const S = (k, v) => localStorage.setItem(k, JSON.stringify(v));
 const inTab = (g, t) => g === "all" || g.split(",").includes(t);
 const LIBTABS = GAMES.filter((g) => g.value !== "reg" && g.value !== "ins");
 const st = Object.assign({ view: "today", game: "fund", q: "", lvl: "all", cat: "all", typ: "all", plat: "all", all: false, day: null }, L("pt_state", {}));
-{ const hv = location.hash.slice(1); if (["today","lib","plan","log","ins","geo","lab","tests","tour","more","warm","rate","prof","rules","license"].includes(hv)) st.view = hv; }
+{ const hv = location.hash.slice(1); if (["today","lib","plan","log","ins","geo","lab","tests","tour","more","warm","rate","prof","rules","license","install","money"].includes(hv)) st.view = hv; }
 const save = () => S("pt_state", { view: st.view, game: st.game, lvl: st.lvl, cat: st.cat, typ: st.typ, plat: st.plat });
 const link = (s, label) => `<a class="btn" href="${esc(url(s))}" target="_blank" rel="noopener">${esc(label || "Open source")}</a>`;
 const isYT = (s) => !s.startsWith("http") && !s.startsWith("/");
@@ -96,6 +96,7 @@ function renderLib(){
 let AUI = null, TUI = null;
 const aui = () => AUI || (AUI = window.Adaptive.ui($, esc, url, vbtns, save, st, () => render()));
 const tui = () => TUI || (TUI = window.Tour.ui($, esc, save, st, () => render()));
+window.PT_tui = tui; window.PT_curView = () => st.view;
 function dayHTML(d, dateKey){
   const done = dateKey ? L("pt_done_" + dateKey, {}) : null;
   return `<div class="card"><div class="t">${esc(d.day)}: ${esc(d.theme)}</div>${d.blocks.map((b, i) => `<div class="block">${done?`<input type="checkbox" data-i="${i}" ${done[i]?"checked":""}>`:""}<div><div class="t">${esc(b[0])}</div><div class="muted">${esc(b[1])}</div>${vbtns((STEPV[d.day] || [])[i])}</div></div>`).join("")}</div>`;
@@ -251,24 +252,26 @@ function renderGeo(){
 function renderMore(){
   $("#title").textContent = "More";
   $("#headx").innerHTML = "";
-  const it = [["warm","⏱️","Pre-Match Warm-Up","10/20/30-minute routine with a timer"],["geo","📐","Geometry","19 concepts with diagrams, cut-angle table"],["rules","⚖️","Rules Compare","Rule differences and terms when you switch leagues"],["rate","🏅","Ratings & Rules","Fargo, UPL, CSI/BCA, NAPA, TAP, VNEA, IBA, ACS, WPA"],["prof","⚙️","Profile & Settings","Level, handedness, eyes, time, games, weaknesses"],["log","📈","Practice Log","Scores and consistency"],["ins","👥","Instructors & Channels","Who to learn from"],["license","📄","License","MIT License, full text"]];
-  $("#main").innerHTML = `<div class="card menu">${it.map(([v, i, t, d]) => `<a href="#${v}" data-go="${v}"><span class="i">${i}</span><span>${t}<small>${d}</small></span></a>`).join("")}</div>`;
-  document.querySelectorAll("[data-go]").forEach((a) => a.onclick = (e) => { e.preventDefault(); st.view = a.dataset.go; save(); render(); });
+  const it = [["warm","⏱️","Pre-Match Warm-Up","10/20/30-minute routine with a timer"],["geo","📐","Geometry","19 concepts with diagrams, cut-angle table"],["rules","⚖️","Rules Compare","Rule differences and terms when you switch leagues"],["rate","🏅","Ratings & Rules","Fargo, UPL, CSI/BCA, NAPA, TAP, VNEA, IBA, ACS, WPA"],["prof","⚙️","Profile & Settings","Level, handedness, eyes, time, games, weaknesses"],["log","📈","Practice Log","Scores and consistency"],["ins","👥","Instructors & Channels","Who to learn from"],["install","📲","Install app","Add it to your Home Screen"],["license","📄","License","MIT License, full text"]];
+  $("#main").innerHTML = `<div class="card menu">${it.map(([v, i, t, d]) => `<a href="#${v}" data-go="${v}"><span class="i">${i}</span><span>${t}<small>${d}</small></span></a>`).join("")}</div>` + `<div class="meta" style="text-align:center;margin-top:10px">The Road Warrior: Pool Tracker and Trainer</div>`;
+  if (window.Money) { $("#main").insertAdjacentHTML("beforeend", window.Money.settingHTML(esc)); window.Money.wireSetting(); }
+  document.querySelectorAll("[data-go]").forEach((a) => a.onclick = (e) => { e.preventDefault(); if (a.dataset.go === "install") { if (window.PT_Install) window.PT_Install.open(); return; } st.view = a.dataset.go; save(); render(); });
 }
 function renderLicense(){
   $("#title").textContent = "License";
   $("#headx").innerHTML = "";
-  $("#main").innerHTML = `<div class="card"><pre style="white-space:pre-wrap;word-wrap:break-word;font:13px/1.45 ui-monospace,Menlo,monospace;margin:0">${esc(window.PT_LICENSE || "")}</pre></div>`;
+  $("#main").innerHTML = `<div class="card"><div class="t" style="margin-bottom:8px">The Road Warrior: Pool Tracker and Trainer</div><pre style="white-space:pre-wrap;word-wrap:break-word;font:13px/1.45 ui-monospace,Menlo,monospace;margin:0">${esc(window.PT_LICENSE || "")}</pre></div>`;
 }
-const MOREV = ["warm","geo","rules","license","rate","prof","log","ins","more"];
+const MOREV = ["money","install","warm","geo","rules","license","rate","prof","log","ins","more"];
 function render(){
   if (window.Adaptive && aui().stopT && st.view !== "warm") aui().stopT();
   document.querySelectorAll("#tabs button").forEach((b) => b.classList.toggle("on", b.dataset.v === st.view || (b.dataset.v === "more" && MOREV.includes(st.view))));
   ({ today: renderToday, lib: renderLib, plan: renderPlan, log: renderLog, ins: renderIns, geo: renderGeo, lab: () => window.renderLab($, esc, save, st),
-     tests: () => aui().renderTests(), tour: () => tui().renderTour(), more: renderMore, warm: () => aui().renderWarm(), rate: () => aui().renderRatings(), rules: () => window.renderRules($, esc), license: renderLicense, prof: () => aui().renderProfile() }[st.view] || renderToday)();
+     tests: () => aui().renderTests(), tour: () => tui().renderTour(), more: renderMore, warm: () => aui().renderWarm(), rate: () => aui().renderRatings(), rules: () => window.renderRules($, esc), license: renderLicense, money: () => window.Money.render($, esc, st, save) , install: () => { renderMore(); if (window.PT_Install) setTimeout(() => window.PT_Install.open(), 0); }, prof: () => aui().renderProfile() }[st.view] || renderToday)();
   if (history.replaceState) history.replaceState(null, "", "#" + st.view);
   document.body.classList.toggle("labmode", st.view === "lab");
   window.scrollTo(0, 0);
+  if (window.Money) window.Money.fab();
 }
 document.querySelectorAll("#tabs button").forEach((b) => b.onclick = () => { st.view = b.dataset.v; save(); render(); });
 render();

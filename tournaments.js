@@ -30,7 +30,7 @@ function icsFor(e, date, remind){
   const dt = date.replace(/-/g, ""); const end = (e.end && !e.weekly ? addDays(e.end, 1) : addDays(date, 1)).replace(/-/g, "");
   const esc = (s) => String(s || "").replace(/[,;\\]/g, (c) => "\\" + c).replace(/\n/g, "\\n");
   const alarm = remind ? `BEGIN:VALARM\r\nACTION:DISPLAY\r\nDESCRIPTION:${esc(e.name)}\r\nTRIGGER:-P${remind}D\r\nEND:VALARM\r\n` : "";
-  return `BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Pool Trainer//EN\r\nBEGIN:VEVENT\r\nUID:${esc(e.id)}-${dt}@pool-trainer\r\nDTSTAMP:${new Date().toISOString().replace(/[-:]/g, "").slice(0, 15)}Z\r\nDTSTART;VALUE=DATE:${dt}\r\nDTEND;VALUE=DATE:${end}\r\nSUMMARY:${esc(e.name)}\r\nLOCATION:${esc([e.venue, e.address].filter(Boolean).join(", "))}\r\nDESCRIPTION:${esc([e.time, e.game, e.format, e.caps, e.fee && "Entry " + e.fee, e.src].filter(Boolean).join(" | "))}\r\n${e.src ? "URL:" + e.src + "\r\n" : ""}${alarm}END:VEVENT\r\nEND:VCALENDAR\r\n`;
+  return `BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//The Road Warrior Pool Tracker and Trainer//EN\r\nBEGIN:VEVENT\r\nUID:${esc(e.id)}-${dt}@pool-trainer\r\nDTSTAMP:${new Date().toISOString().replace(/[-:]/g, "").slice(0, 15)}Z\r\nDTSTART;VALUE=DATE:${dt}\r\nDTEND;VALUE=DATE:${end}\r\nSUMMARY:${esc(e.name)}\r\nLOCATION:${esc([e.venue, e.address].filter(Boolean).join(", "))}\r\nDESCRIPTION:${esc([e.time, e.game, e.format, e.caps, e.fee && "Entry " + e.fee, e.src].filter(Boolean).join(" | "))}\r\n${e.src ? "URL:" + e.src + "\r\n" : ""}${alarm}END:VEVENT\r\nEND:VCALENDAR\r\n`;
 }
 function parseCSV(t){ const rows = []; let r = [], f = "", q = false; for (let i = 0; i < t.length; i++) { const c = t[i]; if (q) { if (c === '"') { if (t[i+1] === '"') { f += '"'; i++; } else q = false; } else f += c; } else if (c === '"') q = true; else if (c === ",") { r.push(f); f = ""; } else if (c === "\n" || c === "\r") { if (c === "\r" && t[i+1] === "\n") i++; r.push(f); rows.push(r); r = []; f = ""; } else f += c; } if (f || r.length) { r.push(f); rows.push(r); } return rows; }
 function uplToEvents(csv){
@@ -94,6 +94,8 @@ function T_ui($, esc, save, st, rerender){
       ["Web search (pre-filled)", `https://www.google.com/search?q=${q}`, "Venue flyers and Facebook posts often show up here; open them yourself."]];
   }
   function allEvents(){ return [].concat(typeof TOUR_SNAP !== "undefined" ? TOUR_SNAP : [], Lg("pt_tmanual", []).map((e) => Object.assign({ tier: "manual" }, e)), Lg("pt_tupl", { ev: [] }).ev); }
+  // compact event list (with trip-cost estimate) for the Money Tracker picker
+  window.PT_tourPick = () => { try { const L = loc(), t = iso(new Date()); return allEvents().map((e) => { const occ = occurrences(e, addDays(t, -45), addDays(t, 90)); if (!occ.length) return null; const dist = e.lat == null ? null : hav(L.lat, L.lon, e.lat, e.lon); const x = { e, occ, dist, c: classify(e) }; let c = null; try { c = window.TripCost ? window.TripCost.calc(x, L) : null; } catch (er) {} return { id: e.id, name: e.name, venue: e.venue || "", city: e.city || "", game: e.game || "", date: occ.filter((d) => d <= t).pop() || occ[0], fee: c && c.fee != null ? c.fee : null, gas: c ? (c.gasShare != null ? c.gasShare : c.gas) : null, lodge: c && c.lodge ? c.lodge : null }; }).filter(Boolean).sort((a, b) => a.date.localeCompare(b.date)); } catch (er) { return []; } };
   function renderTour(){
     $("#title").textContent = "Tournaments";
     const today = iso(new Date());

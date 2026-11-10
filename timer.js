@@ -55,7 +55,7 @@
     const st = cur(), nx = S.steps[S.idx + 1];
     const msg = nx ? "Next: " + nx.t + (nx.sec ? " (" + Math.round(nx.sec / 60) + " min)" : "") : "That was the last step.";
     chime(false); buzz([300, 150, 300, 150, 300]);
-    notify("Time to move on" + (st ? ": " + st.t : ""), msg);
+    notify("Road Warrior: time to move on" + (st ? ": " + st.t : ""), msg);
     toast("⏰ Time to move on" + (st ? " from " + st.t : "") + ". " + msg);
     S.alertMsg = (late ? "Time was up " + Math.round(late / 60) + " min ago. " : "") + msg;
     if (SET.autoAdv && nx) { begin(S.idx + 1); S.autoNote = "Moved on automatically to " + nx.t + "."; save(); return; }
@@ -79,14 +79,14 @@
   let toastT = null;
   const toast = (m) => { let t = document.getElementById("sttoast"); if (!t) { t = document.createElement("div"); t.id = "sttoast"; t.setAttribute("role", "status"); t.setAttribute("aria-live", "polite"); document.body.appendChild(t); } t.textContent = m; t.className = "show"; clearTimeout(toastT); toastT = setTimeout(() => { t.className = ""; }, 6000); };
   const settingsHTML = () => {
-    const ns = !canNotif() ? "Not available in this browser or on this copy of the app." : SET.notif === "granted" && Notification.permission === "granted" ? "On" : Notification.permission === "denied" || SET.notif === "denied" ? "Off (blocked). You can turn it on in iPhone Settings → Notifications if Pool Trainer is listed." : "Off";
+    const ns = !canNotif() ? "Not available in this browser or on this copy of the app." : SET.notif === "granted" && Notification.permission === "granted" ? "On" : Notification.permission === "denied" || SET.notif === "denied" ? "Off (blocked). You can turn it on in iPhone Settings → Notifications if Road Warrior is listed." : "Off";
     return `<details class="stset"><summary>Timer settings and how alerts work</summary><div class="inner">
       <label class="tog"><input type="checkbox" data-stset="sound" ${SET.sound ? "checked" : ""}> Chime when time is up</label>
       <label class="tog"><input type="checkbox" data-stset="warn" ${SET.warn ? "checked" : ""}> 1-minute warning (steps of 3 min or more)</label>
       <label class="tog"><input type="checkbox" data-stset="autoAdv" ${SET.autoAdv ? "checked" : ""}> Move on to the next step automatically (off by default)</label>
       <div class="meta">Phone notifications: ${esc(ns)}${canNotif() && SET.notif !== "granted" && Notification.permission !== "denied" ? ` <button class="btn ghost sm" data-st="asknotif">Allow notifications</button>` : ""}</div>
       <div class="meta">Keep screen awake: ${"wakeLock" in navigator ? (WL ? "on while the timer runs ✔" : "turns on while the timer runs") : "not supported here"}.</div>
-      <div class="meta"><b>Honest note:</b> iPhone may not alert you if Pool Trainer is in the background or the phone is locked, and the chime is silent when the ring/silent switch is on silent. iPhone also doesn't vibrate for web apps. The reliable way is to keep Pool Trainer open on screen while you practice; the timer keeps the screen awake for you. If you come back after the time ran out, the app tells you as soon as it's open again. Phone notifications are a bonus and may not appear at all on iPhone.</div>
+      <div class="meta"><b>Honest note:</b> iPhone may not alert you if Road Warrior is in the background or the phone is locked, and the chime is silent when the ring/silent switch is on silent. iPhone also doesn't vibrate for web apps. The reliable way is to keep Road Warrior open on screen while you practice; the timer keeps the screen awake for you. If you come back after the time ran out, the app tells you as soon as it's open again. Phone notifications are a bonus and may not appear at all on iPhone.</div>
     </div></details>`;
   };
   const clk = () => { const st = cur(), l = leftSec(), up = S.status === "up" || (l != null && l <= 0); return { clock: (S.status === "pause" ? "⏸ " : "") + (st.sec ? (l > 0 ? fmt(l) : "+" + fmt(-l)) : fmt(elapsed())), sub: st.sec ? (up ? "over the planned " + Math.round(st.sec / 60) + " min" : "left of " + Math.round(st.sec / 60) + " min") : "elapsed · no set time for this step (add one below if you like)" }; };

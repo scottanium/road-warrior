@@ -6,9 +6,11 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="apple-mobile-web-app-title" content="Pool Trainer">
+<meta name="apple-mobile-web-app-title" content="Road Warrior">
 <meta name="theme-color" content="#0b3d2e">
-<title>Pool Trainer</title>
+<title>The Road Warrior: Pool Tracker and Trainer</title>
+<meta name="application-name" content="Road Warrior">
+<meta name="description" content="Track pool tournaments and trips, and train with drills, a daily plan, Shot Lab and a practice log.">
 <link rel="manifest" href="manifest.json">
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
 <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
@@ -104,6 +106,48 @@ table.kv td{padding:5px 4px;font-size:14px}
 #stpill.over{background:#5a3d00;color:#fff;border-color:var(--warn)}
 #sttoast{position:fixed;left:12px;right:12px;top:calc(10px + var(--safe-t));z-index:30;background:var(--card);color:var(--text);border:1px solid var(--accent);border-radius:12px;padding:12px 14px;font-weight:600;box-shadow:0 6px 18px rgba(0,0,0,.4);opacity:0;transform:translateY(-12px);transition:opacity .25s,transform .25s;pointer-events:none}#sttoast.show{opacity:1;transform:none}
 .stset{margin-top:8px}.stask .row{margin-top:6px;gap:6px}
+#ptinstall{position:fixed;left:10px;right:10px;bottom:calc(66px + var(--safe-b) + 10px);z-index:12;max-width:440px;margin:0 auto;background:var(--card);color:var(--text);border:1px solid rgba(76,195,138,.45);border-radius:20px;padding:16px 16px 12px;box-shadow:0 14px 40px rgba(0,0,0,.5),0 2px 6px rgba(0,0,0,.3);font-size:15px;line-height:1.35;opacity:0;transform:translateY(16px);transition:opacity .28s ease,transform .32s cubic-bezier(.2,.8,.2,1)}
+#ptinstall.in{opacity:1;transform:none}
+#ptinstall.ins-ipad{bottom:auto;top:calc(var(--safe-t) + 12px);left:auto;right:14px;width:380px;margin:0}
+.ins-head{display:flex;gap:12px;align-items:center}
+.ins-ic{width:52px;height:52px;border-radius:12px;flex:0 0 auto;box-shadow:0 0 0 1px rgba(255,255,255,.08)}
+.ins-ic8{display:flex;align-items:center;justify-content:center;background:#0b3d2e;color:#fff;font-weight:800;font-size:22px}
+.ins-hd{flex:1;min-width:0}.ins-hd h2{margin:0;font-size:17px;font-weight:700;letter-spacing:-.01em;display:flex;align-items:center;gap:6px}.ins-hd h2 svg{width:20px;height:20px;color:var(--accent)}
+.ins-sub{margin:3px 0 0;color:var(--sub);font-size:14px}
+.ins-x{flex:0 0 auto;align-self:flex-start;width:36px;height:36px;margin:-6px -6px 0 0;border-radius:999px;border:0;background:rgba(255,255,255,.07);color:var(--text);display:flex;align-items:center;justify-content:center;padding:0}.ins-x svg{width:18px;height:18px}
+.ins-steps{list-style:none;margin:14px 0 4px;padding:0;display:grid;gap:8px}
+.ins-steps li{display:flex;align-items:center;gap:10px;background:rgba(255,255,255,.04);border:1px solid var(--line);border-radius:12px;padding:9px 10px}
+.ins-n{flex:0 0 auto;width:22px;height:22px;border-radius:999px;background:var(--accent);color:#06140d;font-weight:800;font-size:13px;display:flex;align-items:center;justify-content:center}
+.ins-g{flex:0 0 auto;width:30px;height:30px;border-radius:8px;background:rgba(76,195,138,.14);color:var(--accent);display:flex;align-items:center;justify-content:center}.ins-g svg{width:20px;height:20px}
+.ins-t{flex:1;min-width:0}.ins-t b{font-weight:650}.ins-dim{color:var(--sub);font-size:13px}
+.ins-inl svg{width:15px;height:15px;vertical-align:-3px}
+.ins-note{margin:6px 2px 0;color:var(--sub);font-size:13px}
+.ins-acts{display:flex;align-items:center;gap:8px;margin-top:12px;flex-wrap:wrap}
+.ins-pri{flex:1;min-height:44px;border:0;border-radius:12px;background:var(--accent);color:#06140d;font-weight:700;font-size:16px}
+.ins-sec{min-height:44px;padding:0 18px;border-radius:12px;border:1px solid var(--line);background:transparent;color:var(--text);font-weight:600;font-size:15px}
+.ins-lnk{min-height:44px;padding:0 6px;border:0;background:none;color:var(--sub);font-size:14px;text-decoration:underline;text-underline-offset:3px;margin-left:auto}
+.ins-msg{margin:6px 2px 0;font-size:13px;color:var(--accent);word-break:break-all}.ins-msg:empty{display:none}
+.ins-arrow{flex:0 0 auto;width:22px;height:22px;color:var(--accent);animation:insb 1.6s ease-in-out infinite}.ins-arrow svg{width:22px;height:22px}
+#ptinstall.ins-ipad .ins-arrow{transform:rotate(180deg);animation-name:insu}
+@keyframes insb{0%,100%{transform:translateY(-2px);opacity:.7}50%{transform:translateY(3px);opacity:1}}
+@keyframes insu{0%,100%{transform:rotate(180deg) translateY(-2px);opacity:.7}50%{transform:rotate(180deg) translateY(3px);opacity:1}}
+@media (prefers-reduced-motion: reduce){#ptinstall{transition:none}.ins-arrow{animation:none}}
+@media (prefers-color-scheme: light){#ptinstall{border-color:rgba(19,129,79,.35);box-shadow:0 14px 40px rgba(0,0,0,.18),0 2px 6px rgba(0,0,0,.08)}.ins-x{background:rgba(0,0,0,.06)}.ins-steps li{background:#f7faf8}.ins-g{background:rgba(19,129,79,.1)}.ins-n,.ins-pri{color:#fff}}
+#stpill{bottom:calc(66px + var(--safe-b) + var(--insh,0px))}
+.mgrid{display:grid;grid-template-columns:1fr 1fr;gap:0 10px}.mgrid label{min-width:0}
+.mset{border:1px solid var(--line);border-radius:12px;margin:10px 0;padding:4px 10px 8px}.mset legend{font-weight:700;padding:0 6px}
+.mnet{display:flex;flex-direction:column;gap:2px;align-items:center;text-align:center;border-radius:12px;padding:10px;margin:10px 0;border:2px solid var(--line)}.mnet b{font-size:22px}
+.mnet.ok{border-color:#1e7b34;background:rgba(30,123,52,.15)}.mnet.bad{border-color:#d50000;background:rgba(213,0,0,.12)}.mnet.even{border-color:var(--line)}
+.msum{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin:8px 0}.msum div{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:8px;text-align:center}.msum span{display:block;font-size:12px;color:var(--sub)}.msum b{font-size:17px;font-variant-numeric:tabular-nums}
+.msum .ok{border-color:#1e7b34}.msum .ok b{color:#5fd07a}.msum .bad{border-color:#d50000}.msum .bad b{color:#ff6b6b}
+@media (prefers-color-scheme: light){.msum .ok b{color:#1e7b34}.msum .bad b{color:#b00000}}
+.mrow{border-top:1px solid var(--line);padding:10px 0}.mrow:first-of-type{border-top:0}
+.mcal{max-width:340px;margin:8px auto 0}.mcdisp{background:var(--bg);border:1px solid var(--line);border-radius:12px;padding:10px 14px;text-align:right;font-size:28px;font-variant-numeric:tabular-nums;min-height:52px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.mkeys{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-top:8px}.mkey{min-height:52px;border-radius:12px;border:1px solid var(--line);background:var(--card);font-size:20px;font-weight:600}.mkey.op{background:rgba(76,195,138,.16);color:var(--accent)}.mkey.z{grid-column:span 2}
+.mrank{width:100%;border-collapse:collapse;font-size:13px;margin-top:6px}.mrank th,.mrank td{border-bottom:1px solid var(--line);padding:6px 4px;text-align:left;vertical-align:top}
+#mfab{position:fixed;right:12px;bottom:calc(66px + var(--safe-b) + 10px + var(--insh,0px));z-index:11;width:48px;height:48px;border-radius:999px;border:1px solid var(--accent);background:var(--card);color:var(--accent);font-size:22px;font-weight:800;box-shadow:0 4px 14px rgba(0,0,0,.35)}#mfab.on{background:var(--accent);color:#06140d}
+body.money-on #stpill{right:70px}
+@media (prefers-color-scheme: light){#mfab.on{color:#fff}}
 .wstep.cur{border-color:var(--accent);box-shadow:0 0 0 2px var(--accent)}
 tr.hl td{background:rgba(76,195,138,.15);font-weight:600}
 .menu a{display:flex;align-items:center;gap:12px;padding:14px;border-bottom:1px solid var(--line);color:var(--text);text-decoration:none;font-size:17px}
@@ -130,7 +174,7 @@ body.labmode #labsvg{max-height:calc(100vh - 150px);width:auto!important;max-wid
 </head>
 <body>
 <header>
-  <h1 id="title">Pool Trainer</h1>
+  <h1 id="title">The Road Warrior: Pool Tracker and Trainer</h1>
   <div id="headx"></div>
 </header>
 <main id="main"></main>
@@ -144,6 +188,7 @@ body.labmode #labsvg{max-height:calc(100vh - 150px);width:auto!important;max-wid
   <button data-v="more"><span class="i">☰</span>More</button>
 </nav>
 <script src="legal.js"></script>
+<script src="install.js"></script>
 <script src="data.js"></script>
 <script src="extra.js"></script>
 <script src="videos.js"></script>
@@ -156,6 +201,7 @@ body.labmode #labsvg{max-height:calc(100vh - 150px);width:auto!important;max-wid
 <script src="tripcost.js"></script>
 <script src="profit.js"></script>
 <script src="history.js"></script>
+<script src="money.js"></script>
 <script src="tournaments.js"></script>
 <script src="rulesets.js"></script>
 <script src="rulescmp.js"></script>
