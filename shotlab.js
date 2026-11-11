@@ -8,8 +8,11 @@ const ballCol = (n) => COL[n > 8 ? n - 8 : n] || "#9e9e9e";
 const TIPS = [["Max low (≈1.5 tips low)", -1.25], ["1 tip low", -0.9], ["1/2 tip low", -0.45], ["Center", 0], ["1/2 tip high", 0.45], ["1 tip high", 0.9], ["Max high (≈1.5 tips high)", 1.25]];
 const SPEEDS = [["Soft", 30], ["Medium", 55], ["Firm", 85], ["Power", 120]]; // in/s at the cue ball (rough)
 const MU_S = 0.2, MU_R = 0.012, G = 386, E_RAIL = 0.75; // sliding / rolling friction, gravity in/s^2, rail restitution (rough)
+const PKNAME = { TL: "top-left corner", TS: "top side", TR: "top-right corner", BL: "bottom-left corner", BS: "bottom side", BR: "bottom-right corner" };
+const PKIDS = ["TL", "TS", "TR", "BL", "BS", "BR"];
 const LS = (k, d) => { try { return JSON.parse(localStorage.getItem(k)) ?? d; } catch (e) { return d; } };
 const SS = (k, v) => localStorage.setItem(k, JSON.stringify(v));
+const cssVar = (n, fb) => { try { return getComputedStyle(document.documentElement).getPropertyValue(n).trim() || fb; } catch (e) { return fb; } };
 const v2 = { add: (a, b) => [a[0] + b[0], a[1] + b[1]], sub: (a, b) => [a[0] - b[0], a[1] - b[1]], mul: (a, s) => [a[0] * s, a[1] * s], dot: (a, b) => a[0] * b[0] + a[1] * b[1], len: (a) => Math.hypot(a[0], a[1]), norm: (a) => { const l = Math.hypot(a[0], a[1]) || 1; return [a[0] / l, a[1] / l]; } };
 
 function pockets(T){ const { L, W } = T; return [["TL", [0, 0], "corner"], ["TS", [L / 2, -0.6], "side"], ["TR", [L, 0], "corner"], ["BL", [0, W], "corner"], ["BS", [L / 2, W + 0.6], "side"], ["BR", [L, W], "corner"]]; }
@@ -42,22 +45,50 @@ function pocketedAt(p, T){ return pockets(T).some(([id, c, k]) => v2.len(v2.sub(
 // Cut-induced throw estimate (rough, after Dr. Dave TP A.14 trends): biggest near half-ball, slower = more, roll halves it
 function throwDeg(cutDeg, speedIn, kAtContact){ const base = speedIn < 40 ? 5 : speedIn < 70 ? 3.8 : speedIn < 100 ? 2.8 : 2.2; const shape = Math.sin(Math.min(cutDeg, 89) * Math.PI / 180 * 2) ** 0.6; const rollF = kAtContact > 0.6 ? 0.5 : 1; return cutDeg < 1 ? 0 : base * shape * rollF; }
 
+function blockList(arr){
+  const names = arr.map((b) => b.n ? String(b.n) : "?");
+  if (!names.length) return "";
+  if (names.length === 1) return "the " + names[0] + " ball";
+  if (names.length === 2) return "the " + names[0] + " and " + names[1] + " balls";
+  return "the " + names.slice(0, -1).join(", ") + " and " + names[names.length - 1] + " balls";
+}
+function evalPocket(p, O, C, others, T){
+  const P = aimPoint(p, T), u = v2.norm(v2.sub(P, O)), Gb = v2.sub(O, v2.mul(u, 2 * R)), aim = v2.norm(v2.sub(Gb, C));
+  const cut = Math.acos(Math.max(-1, Math.min(1, v2.dot(aim, u)))) * 180 / Math.PI;
+  const blockOB = others.filter((b) => distSeg([b.x, b.y], O, P)[0] < 2 * R - 0.05);
+  const blockCB = others.filter((b) => distSeg([b.x, b.y], C, Gb)[0] < 2 * R - 0.05);
+  let angOK = true; if (p[2] === "side"){ const a = Math.abs(Math.atan2(Math.abs(u[1]), Math.abs(u[0])) * 180 / Math.PI); angOK = a > 35; }
+  const gbOK = Gb[0] >= R - 0.2 && Gb[0] <= T.L - R + 0.2 && Gb[1] >= R - 0.2 && Gb[1] <= T.W - R + 0.2;
+  let why = "";
+  if (cut >= 85) why = "Not makeable: cut too thin";
+  else if (!angOK) why = "Not makeable: the side pocket angle is too narrow";
+  else if (!gbOK) why = "Not makeable: the ghost-ball position is off the table";
+  else if (blockOB.length) why = "Shot not possible to this pocket: path blocked by " + blockList(blockOB);
+  else if (blockCB.length) why = "Shot not possible to this pocket: cue-ball path blocked by " + blockList(blockCB);
+  return { p, P, u, Gb, aim, cut, blockOB: blockOB.length, blockCB: blockCB.length, blockOBs: blockOB, blockCBs: blockCB, angOK, gbOK, why, dOP: v2.len(v2.sub(P, O)), dCG: v2.len(v2.sub(Gb, C)) };
+}
+function bestOf(list){ return list.slice().sort((a, b) => (a.cut + a.dOP * 0.3) - (b.cut + b.dOP * 0.3))[0]; }
+
 function analyze(L, T){ // L: layout {cb:[x,y], balls:[{n,x,y}], ob: n, pocket: id|'auto', target:[x,y]|null}
-  const out = { ok: false, msg: "", cands: [] };
+  const out = { ok: false, msg: "", cands: [], suggest: null };
   if (!L.cb) { out.msg = "Place the cue ball."; return out; }
-  const ob = L.balls.find((b) => b.n === L.ob); if (!ob) { out.msg = "Tap a ball and choose 'Object ball'."; return out; }
+  const ob = L.balls.find((b) => b.n === L.ob) || L.balls[0];
+  if (!ob) { out.msg = "Add a ball, then tap it to make it the object ball."; return out; }
   const O = [ob.x, ob.y], C = L.cb;
-  const others = L.balls.filter((b) => b !== ob).map((b) => [b.x, b.y]);
-  const list = (L.pocket && L.pocket !== "auto" ? pockets(T).filter((p) => p[0] === L.pocket) : pockets(T)).map((p) => {
-    const P = aimPoint(p, T), u = v2.norm(v2.sub(P, O)), Gb = v2.sub(O, v2.mul(u, 2 * R)), aim = v2.norm(v2.sub(Gb, C));
-    const cut = Math.acos(Math.max(-1, Math.min(1, v2.dot(aim, u)))) * 180 / Math.PI;
-    const blockOB = others.filter((q) => distSeg(q, O, P)[0] < 2 * R - 0.05).length, blockCB = others.filter((q) => distSeg(q, C, Gb)[0] < 2 * R - 0.05).length;
-    // side pockets accept a narrow range of angles
-    let angOK = true; if (p[2] === "side"){ const a = Math.abs(Math.atan2(Math.abs(u[1]), Math.abs(u[0])) * 180 / Math.PI); angOK = a > 35; }
-    return { p, P, u, Gb, aim, cut, blockOB, blockCB, angOK, dOP: v2.len(v2.sub(P, O)), dCG: v2.len(v2.sub(Gb, C)) }; });
-  let pk = list.filter((x) => x.cut < 85 && x.angOK).sort((a, b) => (a.blockOB + a.blockCB) - (b.blockOB + b.blockCB) || (a.cut + a.dOP * 0.3) - (b.cut + b.dOP * 0.3))[0];
-  if (!pk) { pk = list[0]; out.msg = "No makeable angle to that pocket (cut ≥ 85°, or the side pocket angle is too shallow)."; out.pk = pk; return out; }
-  out.pk = pk; out.ok = true;
+  const others = L.balls.filter((b) => b !== ob);
+  const all = pockets(T).map((p) => evalPocket(p, O, C, others, T));
+  const makeable = all.filter((x) => !x.why);
+  const wanted = L.pocket && L.pocket !== "auto" ? all.find((x) => x.p[0] === L.pocket) : null;
+  let pk = wanted || bestOf(makeable) || bestOf(all.filter((x) => x.cut < 85 && x.angOK)) || all[0];
+  out.pk = pk;
+  if (pk && pk.why){
+    out.msg = pk.why;
+    const alt = bestOf(makeable.filter((x) => x !== pk));
+    if (alt){ out.suggest = alt; out.msg += ". Try the " + PKNAME[alt.p[0]] + "."; }
+    return out;
+  }
+  if (!pk){ out.msg = "No makeable shot to that pocket."; return out; }
+  out.ok = true;
   const tgt = L.target || [T.L * 0.5, T.W * 0.5];
   const sims = [];
   for (const [tl, k0] of TIPS) for (const [sl, v0] of SPEEDS) for (const side of [0, -1, 1]) {
@@ -70,7 +101,7 @@ function analyze(L, T){ // L: layout {cb:[x,y], balls:[{n,x,y}], ob: n, pocket: 
     const th = throwDeg(pk.cut, a.v, a.k), miss = pk.dOP * Math.tan(th * Math.PI / 180);
     const r = simCB(pk.Gb, Va, Ws, T, side);
     // kisses: first ball within 2R of the CB path
-    let kiss = null; for (let i = 1; i < r.pts.length && !kiss; i++){ for (const q of others){ if (distSeg(q, r.pts[i - 1], r.pts[i])[0] < 2 * R - 0.05){ kiss = q; break; } } }
+    let kiss = null; for (let i = 1; i < r.pts.length && !kiss; i++){ for (const q of others){ if (distSeg([q.x, q.y], r.pts[i - 1], r.pts[i])[0] < 2 * R - 0.05){ kiss = [q.x, q.y]; break; } } }
     if (v2.len(v2.sub(r.end, O)) < 2 * R && pk.cut < 3 && k0 > 0) kiss = O;
     const dist = v2.len(v2.sub(r.end, tgt));
     const score = dist + (r.scratch ? 200 : 0) + (kiss ? 40 : 0) + (dOB < pk.dOP ? 300 : 0) + (side ? 2 : 0) + Math.max(0, r.rails - 2) * 1.5;
@@ -81,84 +112,341 @@ function analyze(L, T){ // L: layout {cb:[x,y], balls:[{n,x,y}], ob: n, pocket: 
   return out; }
 
 // ---------- UI ----------
-let T, Lay, sel = null, res = null, showIdx = 0;
+let T, Lay, sel = null, res = null, showIdx = 0, fsOn = false, pickOn = false, shotMsg = "", fsScrollY = 0, _redraw = null;
 const defLayout = () => ({ size: "9", cb: [25, 25], balls: [{ n: 1, x: 70, y: 18 }], ob: 1, pocket: "auto", target: [60, 34], name: "", notes: "" });
-function load(){ Lay = LS("pt_lab_cur", null) || defLayout(); T = TABLES[Lay.size] || TABLES["9"]; }
-function persist(){ SS("pt_lab_cur", Lay); }
+function load(){
+  Lay = LS("pt_lab_cur", null) || defLayout();
+  T = TABLES[Lay.size] || TABLES["9"];
+  const savedPk = LS("pt_lab_pocket", null);
+  if (savedPk === "auto" || (typeof savedPk === "string" && PKIDS.includes(savedPk))) Lay.pocket = savedPk;
+  if (!Lay.pocket) Lay.pocket = "auto";
+}
+function persist(){ SS("pt_lab_cur", Lay); SS("pt_lab_pocket", Lay.pocket || "auto"); }
 const LOCKSVG = (on) => on ? '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="10.5" width="14" height="10" rx="2.2" fill="currentColor"/><path d="M8 10.5V8a4 4 0 0 1 8 0v2.5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg>' : '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="10.5" width="14" height="10" rx="2.2" fill="none" stroke="currentColor" stroke-width="2"/><path d="M8 10.5V8a4 4 0 0 1 7.7-1.5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg>';
+const FSSVG = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 3H4v5M15 3h5v5M9 21H4v-5M15 21h5v-5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
 const isLocked = () => !!LS("pt_lab_lock", false);
-function svgTable(esc){ const S = 10, rail = 4.5, L = T.L, W = T.W; const land = matchMedia("(orientation: landscape)").matches || window.innerWidth > 700;
+
+function setPocket(id){
+  Lay.pocket = id || "auto";
+  showIdx = 0;
+  persist();
+}
+
+function enterFS(){
+  if (fsOn) return;
+  fsOn = true;
+  fsScrollY = window.scrollY || 0;
+  document.body.style.top = "-" + fsScrollY + "px";
+  document.body.classList.add("labfs-on");
+  const root = document.documentElement;
+  const req = root.requestFullscreen || root.webkitRequestFullscreen;
+  if (req) Promise.resolve(req.call(root)).catch(() => {});
+  if (_redraw) _redraw();
+}
+function exitFS(){
+  const was = fsOn;
+  fsOn = false;
+  pickOn = false;
+  document.body.classList.remove("labfs-on");
+  document.body.style.top = "";
+  try {
+    const ex = document.exitFullscreen || document.webkitExitFullscreen;
+    if (ex && (document.fullscreenElement || document.webkitFullscreenElement)) ex.call(document);
+  } catch (e) {}
+  if (was) window.scrollTo(0, fsScrollY || 0);
+  if (was && _redraw) _redraw();
+}
+function toggleFS(){ if (fsOn) exitFS(); else enterFS(); }
+
+let fsWired = false;
+function wireFSOnce(){
+  if (fsWired) return;
+  fsWired = true;
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape" && fsOn) { e.preventDefault(); exitFS(); } });
+  const onFsChange = () => {
+    if (!fsOn) return;
+    if (!(document.fullscreenElement || document.webkitFullscreenElement)) {
+      // Native FS closed (Esc / browser UI). Keep the CSS overlay unless we initiated exitFS already.
+    }
+  };
+  document.addEventListener("fullscreenchange", onFsChange);
+  document.addEventListener("webkitfullscreenchange", onFsChange);
+  const tabs = document.getElementById("tabs");
+  if (tabs) tabs.addEventListener("click", (e) => { if (fsOn && e.target.closest("[data-v]")) exitFS(); }, true);
+  window.addEventListener("hashchange", () => { if (fsOn && location.hash.slice(1) !== "lab") exitFS(); });
+}
+
+function placeRack(kind){
+  const d = 2 * R, dx = d * Math.sqrt(3) / 2, foot = [T.L * 3 / 4, T.W / 2];
+  const rows = kind === 9 ? [1, 2, 3, 2, 1] : [1, 2, 3, 4, 5];
+  const spots = [];
+  for (let r = 0; r < rows.length; r++){
+    const n = rows[r], y0 = foot[1] - (n - 1) * d / 2;
+    for (let i = 0; i < n; i++) spots.push([foot[0] + r * dx, y0 + i * d]);
+  }
+  let nums;
+  if (kind === 9) nums = [1, 2, 3, 4, 9, 5, 6, 7, 8];
+  else {
+    nums = new Array(15); nums[0] = 1; nums[4] = 8; nums[10] = 2; nums[14] = 15;
+    const rest = [3, 4, 5, 6, 7, 9, 10, 11, 12, 13, 14];
+    let j = 0; for (let i = 0; i < 15; i++) if (!nums[i]) nums[i] = rest[j++];
+  }
+  Lay.balls = spots.map((p, i) => ({ n: nums[i], x: Math.max(R, Math.min(T.L - R, p[0])), y: Math.max(R, Math.min(T.W - R, p[1])) }));
+  Lay.cb = [T.L / 4, T.W / 2];
+  Lay.ob = 1;
+  Lay.target = [T.L * 0.5, T.W * 0.5];
+  sel = null;
+}
+
+function freeSpot(){ for (let i = 0; i < 200; i++){ const p = [R + Math.random() * (T.L - 2 * R), R + Math.random() * (T.W - 2 * R)]; if ([Lay.cb, ...Lay.balls.map((b) => [b.x, b.y])].every((q) => !q || v2.len(v2.sub(p, q)) > 3 * R)) return p; } return [T.L / 2, T.W / 2]; }
+function toggleBall(n){
+  if (n === "cb"){
+    if (Lay.cb) Lay.cb = null;
+    else { const sp = freeSpot(); Lay.cb = sp; }
+    sel = Lay.cb ? "cb" : null;
+    persist(); return;
+  }
+  const i = Lay.balls.findIndex((x) => x.n === n);
+  if (i >= 0){
+    Lay.balls.splice(i, 1);
+    if (sel && sel !== "cb" && sel.n === n) sel = null;
+    if (Lay.ob === n) Lay.ob = Lay.balls[0] ? Lay.balls[0].n : null;
+  } else {
+    const sp = freeSpot();
+    const b = { n, x: sp[0], y: sp[1] };
+    Lay.balls.push(b);
+    if (!Lay.ob) Lay.ob = n;
+    sel = b;
+  }
+}
+
+function pickerHTML(esc){
+  const used = new Set(Lay.balls.map((b) => b.n));
+  const dark = (n) => [2, 4, 7, 8].includes(n > 8 ? n - 8 : n);
+  const one = (key, label, col, st, on, isOb, isCue) => {
+    const cls = `labball${on ? " on" : ""}${isOb ? " ob" : ""}${isCue ? " cue" : ""}${st ? " st" : !isCue ? " solid" : ""}`;
+    const style = isCue ? "" : `--bc:${col};color:${dark(+key) ? "#fff" : "#000"}`;
+    return `<button type="button" class="${cls}" data-add="${key}" aria-pressed="${on}" aria-label="${isCue ? "Cue ball" : "Ball " + label}${on ? " (on the table)" : ""}${isOb ? ", object ball" : ""}" style="${style}" title="Tap to add or remove. Long-press a ball on the table to make it the object ball.">${isCue ? "CB" : (st ? `<span class="labband"></span><span class="labn">${label}</span>` : label)}</button>`;
+  };
+  let h = `<div class="labpick" id="labpick"><div class="labpick-h"><b>Balls</b><button type="button" class="btn ghost" id="labrack9">9-ball rack</button><button type="button" class="btn ghost" id="labrack8">8-ball rack</button><button type="button" class="btn ghost" id="labclear">Clear table</button>${fsOn ? `<button type="button" class="btn ghost" id="labpickx">Close</button>` : ""}</div>`;
+  h += `<div class="labpick-row">${one("cb", "CB", "#fffef5", false, !!Lay.cb, false, true)}`;
+  for (let n = 1; n <= 15; n++) h += one(String(n), String(n), ballCol(n), n > 8, used.has(n), Lay.ob === n, false);
+  h += `</div><div class="meta">Tap a number to add or remove that ball. Tap a ball on the table to make it the object ball. Long-press a ball in this row to set it as the object ball.</div></div>`;
+  return h;
+}
+
+function svgTable(esc){
+  const S = 10, rail = 4.5, L = T.L, W = T.W; const land = matchMedia("(orientation: landscape)").matches || window.innerWidth > 700;
   const vw = (L + 2 * rail) * S, vh = (W + 2 * rail) * S;
   const g = land ? `translate(${rail * S},${rail * S}) scale(${S})` : `translate(${vh - rail * S},${rail * S}) rotate(90) scale(${S})`;
   const lk = isLocked();
-  let s = `<div class="labwrap ${land ? "land" : "port"}"><div class="labtbl"><svg id="labsvg" class="${lk ? "locked" : ""}" viewBox="0 0 ${land ? vw : vh} ${land ? vh : vw}" style="width:100%;height:auto;touch-action:pan-x pan-y pinch-zoom;display:block;border-radius:12px;background:#4a2c17" aria-label="Pool table${lk ? " (locked: balls can't be moved)" : ""}">`;
+  const accent = cssVar("--accent", "#4cc38a");
+  const warn = cssVar("--warn", "#ffd54f");
+  const bad = cssVar("--bad", "#ff6b6b");
+  const selPk = Lay.pocket && Lay.pocket !== "auto" ? Lay.pocket : null;
+  let s = `<div class="labwrap ${land ? "land" : "port"}"><div class="labtbl"><svg id="labsvg" class="${lk ? "locked" : ""}" viewBox="0 0 ${land ? vw : vh} ${land ? vh : vw}" style="width:100%;height:auto;touch-action:pan-x pan-y pinch-zoom;display:block;border-radius:12px;background:#4a2c17" aria-label="Pool table${lk ? " (locked: balls can't be moved)" : ""}. Tap a pocket to aim at it.">`;
   s += `<g id="labg" transform="${g}"><rect x="0" y="0" width="${L}" height="${W}" fill="#1f6f43"/>`;
   for (let i = 1; i < 8; i++) s += `<circle cx="${L * i / 8}" cy="${-rail / 2}" r=".45" fill="#eee"/><circle cx="${L * i / 8}" cy="${W + rail / 2}" r=".45" fill="#eee"/>`;
   for (let i = 1; i < 4; i++) s += `<circle cx="${-rail / 2}" cy="${W * i / 4}" r=".45" fill="#eee"/><circle cx="${L + rail / 2}" cy="${W * i / 4}" r=".45" fill="#eee"/>`;
   s += `<line x1="${L / 4}" y1="0" x2="${L / 4}" y2="${W}" stroke="#ffffff22" stroke-width=".25"/><circle cx="${L * 3 / 4}" cy="${W / 2}" r=".4" fill="#ffffff55"/>`;
-  for (const p of pockets(T)) { const on = res && res.pk && res.pk.p[0] === p[0]; s += `<circle data-pk="${p[0]}" cx="${p[1][0]}" cy="${p[1][1]}" r="${(p[2] === "corner" ? MOUTH.corner : MOUTH.side) / 2}" fill="#050505" stroke="${on ? "#ffd54f" : "none"}" stroke-width=".5"/>`; }
-  if (res && res.pk){ const pk = res.pk; s += `<line x1="${Lay.cb[0]}" y1="${Lay.cb[1]}" x2="${pk.Gb[0]}" y2="${pk.Gb[1]}" stroke="#ffd54f" stroke-width=".35"/><line x1="${pk.Gb[0] + pk.u[0] * 2 * R}" y1="${pk.Gb[1] + pk.u[1] * 2 * R}" x2="${pk.P[0]}" y2="${pk.P[1]}" stroke="#81d4fa" stroke-width=".35" stroke-dasharray="1 .6"/><circle cx="${pk.Gb[0]}" cy="${pk.Gb[1]}" r="${R}" fill="none" stroke="#fff" stroke-width=".2" stroke-dasharray=".6 .4"/>`;
-    res.cands.forEach((c, i) => { if (i !== showIdx && showIdx !== -1) return; const col = ["#b9f6ca", "#ffab91", "#ce93d8", "#fff59d", "#80cbc4"][i]; s += `<polyline points="${c.r.pts.map((q) => q[0].toFixed(2) + "," + q[1].toFixed(2)).join(" ")}" fill="none" stroke="${col}" stroke-width="${i === showIdx ? .45 : .3}"/><circle cx="${c.r.end[0]}" cy="${c.r.end[1]}" r="${R}" fill="none" stroke="${col}" stroke-width=".3"/>`; }); }
+  for (const p of pockets(T)) {
+    const mouthR = (p[2] === "corner" ? MOUTH.corner : MOUTH.side) / 2;
+    const userOn = selPk === p[0];
+    const autoOn = !selPk && res && res.pk && res.pk.p[0] === p[0];
+    const ring = userOn ? accent : (autoOn ? warn : "none");
+    s += `<circle cx="${p[1][0]}" cy="${p[1][1]}" r="${mouthR}" fill="#050505" stroke="${ring}" stroke-width="${userOn ? 0.55 : 0.4}"/>`;
+    if (userOn) s += `<circle class="pk-ring" cx="${p[1][0]}" cy="${p[1][1]}" r="${mouthR + 1.15}" fill="none" stroke="${accent}" stroke-width=".6"/>`;
+    s += `<circle data-pk="${p[0]}" cx="${p[1][0]}" cy="${p[1][1]}" r="6.5" fill="#000" fill-opacity="0" role="button" aria-label="${userOn ? "Clear " : "Aim at the "}${PKNAME[p[0]]}" tabindex="0"/>`;
+  }
+  if (res && res.pk){
+    const pk = res.pk, good = res.ok, aimCol = good ? "#ffd54f" : bad, obCol = good ? "#81d4fa" : bad;
+    const dashAim = good ? "" : ` stroke-dasharray="1.2 .7"`;
+    s += `<line x1="${Lay.cb[0]}" y1="${Lay.cb[1]}" x2="${pk.Gb[0]}" y2="${pk.Gb[1]}" stroke="${aimCol}" stroke-width=".35"${dashAim}/><line x1="${pk.Gb[0] + pk.u[0] * 2 * R}" y1="${pk.Gb[1] + pk.u[1] * 2 * R}" x2="${pk.P[0]}" y2="${pk.P[1]}" stroke="${obCol}" stroke-width=".35" stroke-dasharray="1 .6"/><circle cx="${pk.Gb[0]}" cy="${pk.Gb[1]}" r="${R}" fill="none" stroke="${good ? "#fff" : bad}" stroke-width=".2" stroke-dasharray=".6 .4"/>`;
+    if (good) res.cands.forEach((c, i) => { if (i !== showIdx && showIdx !== -1) return; const col = ["#b9f6ca", "#ffab91", "#ce93d8", "#fff59d", "#80cbc4"][i]; s += `<polyline points="${c.r.pts.map((q) => q[0].toFixed(2) + "," + q[1].toFixed(2)).join(" ")}" fill="none" stroke="${col}" stroke-width="${i === showIdx ? .45 : .3}"/><circle cx="${c.r.end[0]}" cy="${c.r.end[1]}" r="${R}" fill="none" stroke="${col}" stroke-width=".3"/>`; });
+  }
   if (Lay.target) s += `<g data-drag="tgt"><circle cx="${Lay.target[0]}" cy="${Lay.target[1]}" r="2.2" fill="#ffffff18" stroke="#fff" stroke-width=".25" stroke-dasharray=".8 .5"/><path d="M${Lay.target[0] - 1},${Lay.target[1]} h2 M${Lay.target[0]},${Lay.target[1] - 1} v2" stroke="#fff" stroke-width=".25"/></g>`;
   for (const b of Lay.balls){ const c = ballCol(b.n), st = b.n > 8; s += `<g data-drag="b${Lay.balls.indexOf(b)}"><circle cx="${b.x}" cy="${b.y}" r="${R * 1.7}" fill="#000" fill-opacity="0"/>` + (st ? `<circle cx="${b.x}" cy="${b.y}" r="${R}" fill="#fafafa"/><clipPath id="cl${b.x | 0}_${b.y | 0}"><rect x="${b.x - R}" y="${b.y - R * .55}" width="${2 * R}" height="${R * 1.1}"/></clipPath><circle cx="${b.x}" cy="${b.y}" r="${R}" fill="${c}" clip-path="url(#cl${b.x | 0}_${b.y | 0})"/>` : `<circle cx="${b.x}" cy="${b.y}" r="${R}" fill="${b.n ? c : "#9e9e9e"}"/>`) + `<circle cx="${b.x}" cy="${b.y}" r="${R}" fill="none" stroke="${sel === b ? "#ffd54f" : b.n === Lay.ob ? "#fff" : "#0006"}" stroke-width="${sel === b || b.n === Lay.ob ? .35 : .12}"/><text x="${b.x}" y="${b.y + .42}" font-size="1.15" text-anchor="middle" fill="${b.n === 8 || b.n === 2 || b.n === 4 || b.n === 7 ? "#fff" : "#000"}" font-family="system-ui" font-weight="700" ${land ? "" : `transform="rotate(-90 ${b.x} ${b.y})"`}>${b.n || "?"}</text></g>`; }
   if (Lay.cb) s += `<g data-drag="cb"><circle cx="${Lay.cb[0]}" cy="${Lay.cb[1]}" r="${R * 1.7}" fill="#000" fill-opacity="0"/><circle cx="${Lay.cb[0]}" cy="${Lay.cb[1]}" r="${R}" fill="#fffef5" stroke="${sel === "cb" ? "#ffd54f" : "#0006"}" stroke-width=".2"/></g>`;
-  return s + `</g></svg></div><div class="labrail"><button type="button" id="lablock" class="lablock ${lk ? "on" : ""}" aria-pressed="${lk}" aria-label="${lk ? "Table locked. Tap to unlock and move balls" : "Table unlocked. Tap to lock so balls can't move"}">${LOCKSVG(lk)}<span>${lk ? "Locked" : "Unlocked"}</span></button><div class="labgrip" aria-hidden="true"><span class="gl"></span><b>↕</b><span class="gt">Scroll</span><span class="gl"></span></div></div></div>`; }
+  s += `</g></svg></div>`;
+  if (!fsOn){
+    s += `<div class="labrail"><div class="labrail-btns">`;
+    s += `<button type="button" id="lablock" class="lablock ${lk ? "on" : ""}" aria-pressed="${lk}" aria-label="${lk ? "Table locked. Tap to unlock and move balls" : "Table unlocked. Tap to lock so balls can't move"}">${LOCKSVG(lk)}<span>${lk ? "Locked" : "Unlocked"}</span></button>`;
+    s += `<button type="button" id="labfsbtn" class="lablock" aria-label="Full screen">${FSSVG}<span>Full</span></button>`;
+    s += `</div><div class="labgrip" aria-hidden="true"><span class="gl"></span><b>↕</b><span class="gt">Scroll</span><span class="gl"></span></div></div>`;
+  }
+  return s + `</div>`;
+}
+
+function readoutHTML(esc){
+  if (!res) return "";
+  if (!res.ok) return `<div class="callout labshot-msg" id="labshotmsg">${esc(res.msg)}</div>`;
+  const pk = res.pk, usedOb = (Lay.balls.find((b) => b.n === Lay.ob) || Lay.balls[0] || {}).n || Lay.ob;
+  let h = `<div class="card labshot-msg"><div class="t">Shot: ball ${usedOb} to the ${PKNAME[pk.p[0]]}</div><div class="meta">Cut angle <b>${pk.cut.toFixed(1)}°</b> · ball-hit fraction ≈ ${(1 - Math.sin(pk.cut * Math.PI / 180)).toFixed(2)} · CB→ghost ${(pk.dCG / 12).toFixed(1)} ft · OB→pocket ${(pk.dOP / 12).toFixed(1)} ft</div>`;
+  if (pk.blockCB) h += `<div class="bad">⚠ Cue ball path to the ghost ball is blocked</div>`;
+  if (pk.blockOB) h += `<div class="bad">⚠ Object ball path to the pocket is blocked</div>`;
+  return h + `</div>`;
+}
+
+function fsBarHTML(esc){
+  const lk = isLocked();
+  let h = `<div class="labfs-bar">`;
+  h += `<button type="button" class="btn" id="labsnap">Screenshot</button>`;
+  h += `<button type="button" class="btn" id="labadd" aria-pressed="${pickOn}">Add balls</button>`;
+  h += `<button type="button" id="lablock" class="btn lablock-fs ${lk ? "on" : ""}" aria-pressed="${lk}">${lk ? "Unlock" : "Lock"}</button>`;
+  h += `<button type="button" class="btn" id="labfsx">Exit full screen</button>`;
+  h += `</div>`;
+  if (Lay.pocket && Lay.pocket !== "auto") h += `<div class="labfs-sub"><button type="button" class="btn ghost" id="lpkauto">Auto pocket</button><span class="meta">Aiming at the ${PKNAME[Lay.pocket]}. Tap that pocket again for Auto.</span></div>`;
+  if (shotMsg) h += `<div class="meta labfs-status" id="labsnapmsg">${esc(shotMsg)}</div>`;
+  return h;
+}
+
+async function captureTable(){
+  const svg = document.getElementById("labsvg");
+  if (!svg) throw new Error("No table to capture");
+  const clone = svg.cloneNode(true);
+  clone.querySelectorAll("[data-pk]").forEach((c) => { if (c.getAttribute("fill-opacity") === "0") c.remove(); });
+  const vb = (clone.getAttribute("viewBox") || "0 0 100 100").trim().split(/[\s,]+/).map(Number);
+  const w = vb[2], h = vb[3], scale = 3;
+  clone.setAttribute("xmlns", "http://www.w3.org/2000/svg");
+  clone.setAttribute("width", String(Math.round(w * scale)));
+  clone.setAttribute("height", String(Math.round(h * scale)));
+  const xml = new XMLSerializer().serializeToString(clone);
+  const url = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(xml);
+  const img = new Image();
+  await new Promise((res, rej) => { img.onload = res; img.onerror = () => rej(new Error("Could not render the table image")); img.src = url; });
+  const cv = document.createElement("canvas");
+  cv.width = Math.round(w * scale); cv.height = Math.round(h * scale);
+  cv.getContext("2d").drawImage(img, 0, 0);
+  const blob = await new Promise((res) => cv.toBlob(res, "image/png"));
+  if (!blob) throw new Error("Could not make a PNG");
+  const file = new File([blob], "road-warrior-shot.png", { type: "image/png" });
+  if (navigator.share && navigator.canShare){
+    try {
+      if (navigator.canShare({ files: [file] })){
+        await navigator.share({ files: [file], title: "Shot Lab", text: "Road Warrior shot" });
+        return "Screenshot shared.";
+      }
+    } catch (e){ if (e && e.name === "AbortError") return ""; }
+  }
+  const href = URL.createObjectURL(blob);
+  const a = document.createElement("a"); a.href = href; a.download = "road-warrior-shot.png"; document.body.appendChild(a); a.click(); a.remove();
+  const ios = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+  if (ios) window.open(href, "_blank");
+  else setTimeout(() => URL.revokeObjectURL(href), 4000);
+  return ios ? "Screenshot ready. Press and hold the image to save it to Photos." : "Screenshot saved.";
+}
 
 window.renderLab = function($, esc, save, st){
   load();
+  wireFSOnce();
   $("#title").textContent = "Shot Lab";
   $("#headx").innerHTML = `<div class="chips">${[["table","Table"],["photo","📷 Photo"],["saved","Saved"]].map(([k, l]) => `<button class="chip ${(st.labtab || "table") === k ? "on" : ""}" data-lt="${k}">${l}</button>`).join("")}</div>`;
   document.querySelectorAll("[data-lt]").forEach((b) => b.onclick = () => { st.labtab = b.dataset.lt; window.renderLab($, esc, save, st); });
   const tab = st.labtab || "table";
+  if (tab !== "table" && fsOn) { fsOn = false; pickOn = false; document.body.classList.remove("labfs-on"); document.body.style.top = ""; try { const ex = document.exitFullscreen || document.webkitExitFullscreen; if (ex && (document.fullscreenElement || document.webkitFullscreenElement)) ex.call(document); } catch (e) {} }
   if (tab === "photo") return window.PhotoLab($, esc, () => { st.labtab = "table"; window.renderLab($, esc, save, st); }, (lay) => { Lay = Object.assign(defLayout(), lay); T = TABLES[Lay.size]; persist(); });
   if (tab === "saved") return renderSaved($, esc, save, st);
   const draw = () => {
+    if (Lay.balls.length && !Lay.balls.some((b) => b.n === Lay.ob)) Lay.ob = Lay.balls[0].n;
     res = analyze(Lay, T);
-    const used = new Set(Lay.balls.map((b) => b.n));
     let h = `<div class="callout warnc"><b>Approximate training aid, not a physics simulator.</b> Paths use simple friction, rail-bounce and throw models from published trends (Dr. Dave TPs); real cloth, balls, cushions and your stroke will differ. Use it to plan, then test on the table.</div>`;
-    h += `<div class="row"><select id="lsize">${Object.entries(TABLES).map(([k, t]) => `<option value="${k}" ${Lay.size === k ? "selected" : ""}>${t.name}</option>`).join("")}</select><select id="lpk"><option value="auto">Pocket: best (auto)</option>${pockets(T).map((p) => `<option value="${p[0]}" ${Lay.pocket === p[0] ? "selected" : ""}>Pocket: ${({TL:"top-left corner",TS:"top side",TR:"top-right corner",BL:"bottom-left corner",BS:"bottom side",BR:"bottom-right corner"})[p[0]]}</option>`).join("")}</select></div>`;
-    h += `<div id="tblwrap">${svgTable(esc)}</div><div class="meta">Drag the cue ball, balls and the dashed target ring (where you want the cue ball to finish). Tap a ball to select it. To scroll, drag the strip beside the table, the brown rail or the felt, or lock the table with the padlock. Rotate the phone for a bigger landscape table.</div>`;
-    h += `<div class="chips" id="addb">${[...Array(15)].map((_, i) => i + 1).map((n) => `<button class="chip ${used.has(n) ? "on" : ""}" data-n="${n}" style="${used.has(n) ? `background:${ballCol(n)};border-color:${ballCol(n)};color:${[2,4,7,8].includes(n > 8 ? n - 8 : n) ? "#fff" : "#000"}` : ""}">${n}</button>`).join("")}</div><div class="meta">Tap a number to add or remove that ball.</div>`;
+    h += `<div class="row"><select id="lsize">${Object.entries(TABLES).map(([k, t]) => `<option value="${k}" ${Lay.size === k ? "selected" : ""}>${t.name}</option>`).join("")}</select><select id="lpk"><option value="auto">Pocket: Auto</option>${pockets(T).map((p) => `<option value="${p[0]}" ${Lay.pocket === p[0] ? "selected" : ""}>Pocket: ${PKNAME[p[0]]}</option>`).join("")}</select></div>`;
+    h += `<div id="tblwrap" class="${fsOn ? "labfs-overlay" : ""}">`;
+    if (fsOn) h += fsBarHTML(esc) + `<div class="labfs-stage">`;
+    h += svgTable(esc);
+    if (fsOn) h += `</div>` + readoutHTML(esc) + (pickOn ? pickerHTML(esc) : "");
+    h += `</div>`;
+    if (!fsOn){
+      h += readoutHTML(esc);
+      h += `<div class="meta">Drag the cue ball, balls and the dashed target ring (where you want the cue ball to finish). Tap a pocket to aim at it (tap it again for Auto). Tap a ball to make it the object ball. To scroll, drag the strip beside the table, the brown rail or the felt, or lock the table with the padlock. Rotate the phone for a bigger landscape table.</div>`;
+      h += pickerHTML(esc);
+    }
     if (sel && sel !== "cb") h += `<div class="card"><b>Selected: ball ${sel.n || "?"}</b><div class="row"><button class="btn" id="mkob">Make object ball</button><select id="setn"><option value="">Set number…</option>${[...Array(15)].map((_, i) => `<option value="${i + 1}">${i + 1}</option>`).join("")}</select><button class="btn ghost" id="delb">Remove</button></div></div>`;
-    if (!res.ok) h += `<div class="callout">${esc(res.msg)}</div>`;
-    else { const pk = res.pk; h += `<div class="card"><div class="t">Shot: ball ${Lay.ob} to the ${({TL:"top-left corner",TS:"top side",TR:"top-right corner",BL:"bottom-left corner",BS:"bottom side",BR:"bottom-right corner"})[pk.p[0]]}</div><div class="meta">Cut angle <b>${pk.cut.toFixed(1)}°</b> · ball-hit fraction ≈ ${(1 - Math.sin(pk.cut * Math.PI / 180)).toFixed(2)} · CB→ghost ${(pk.dCG / 12).toFixed(1)} ft · OB→pocket ${(pk.dOP / 12).toFixed(1)} ft</div>${pk.blockCB ? `<div class="bad">⚠ Cue ball path to the ghost ball is blocked</div>` : ""}${pk.blockOB ? `<div class="bad">⚠ Object ball path to the pocket is blocked</div>` : ""}</div>`;
+    if (res.ok){
       if (!res.cands.length) h += `<div class="callout">No candidate reaches the object ball cleanly. Try another pocket.</div>`;
       h += res.cands.map((c, i) => `<div class="card cand ${i === showIdx ? "on" : ""}" data-ci="${i}"><div class="t">${i + 1}. ${esc(c.tip)} · ${c.speed}</div><div class="meta">Ends ${(c.dist).toFixed(0)} in from your target · ${c.r.rails} rail${c.r.rails === 1 ? "" : "s"} · cue ball arrives with ${c.kc > 0.8 ? "natural roll" : c.kc > 0.2 ? "some follow" : c.kc > -0.2 ? "stun (no spin)" : "draw"}</div><div class="meta">Throw estimate ≈ ${c.th.toFixed(1)}° (≈ ${c.miss.toFixed(1)} in at the pocket) - aim a touch thicker${c.side ? "; sidespin also squirts and throws, adjust" : ""}</div>${c.r.scratch ? `<div class="bad">⚠ Scratch risk</div>` : ""}${c.kiss ? `<div class="bad">⚠ Possible kiss / contact with another ball</div>` : ""}${c.obShort ? `<div class="bad">⚠ Object ball may not reach the pocket at this speed</div>` : ""}</div>`).join("");
-      h += `<div class="row"><button class="btn ghost" id="showall">${showIdx === -1 ? "Show one path" : "Show all paths"}</button></div>`; }
+      h += `<div class="row"><button class="btn ghost" id="showall">${showIdx === -1 ? "Show one path" : "Show all paths"}</button></div>`;
+    }
     h += `<div class="card"><div class="t">Save layout</div><input type="text" id="lname" placeholder="Name (e.g. 'Right cut, side pocket')" value="${esc(Lay.name || "")}"><textarea id="lnotes" placeholder="Notes">${esc(Lay.notes || "")}</textarea><div class="row"><button class="btn" id="lsave">Save</button><button class="btn ghost" id="lreset">Reset table</button></div></div>`;
-    h += `<details><summary>How the suggestions work</summary><div class="inner desc">Ghost ball and cut angle from simple geometry. After contact the cue ball keeps the tangent part of its speed and its spin; friction bends it from the tangent line (stun) toward the 30° roll line or back for draw (the trisect and 30° rules come out of this). Rails bounce with a restitution of ${E_RAIL}, so rebound angles come out wider than the approach (TP 6.3). Throw uses a rough 0-5° estimate (largest near half-ball and at slow speed). Candidates: 7 tip heights × 4 speeds (+ left/right english), ranked by how close the cue ball ends to your target, with penalties for scratches, kisses and short object balls.</div></details>`;
+    h += `<details><summary>How the suggestions work</summary><div class="inner desc">Ghost ball and cut angle from simple geometry. After contact the cue ball keeps the tangent part of its speed and its spin; friction bends it from the tangent line (stun) toward the 30° roll line or back for draw (the trisect and 30° rules come out of this). Rails bounce with a restitution of ${E_RAIL}, so rebound angles come out wider than the approach (TP 6.3). Throw uses a rough 0-5° estimate (largest near half-ball and at slow speed). Candidates: 7 tip heights × 4 speeds (+ left/right english), ranked by how close the cue ball ends to your target, with penalties for scratches, kisses and short object balls. Tap a pocket on the table to aim at it, or use Pocket: Auto to pick the best makeable pocket.</div></details>`;
     $("#main").innerHTML = h; wire();
   };
+  _redraw = draw;
   const wire = () => {
-    $("#lsize").onchange = (e) => { Lay.size = e.target.value; T = TABLES[Lay.size]; const cl = (p) => [Math.min(p[0], T.L - R), Math.min(p[1], T.W - R)]; Lay.cb = cl(Lay.cb); Lay.target = cl(Lay.target); Lay.balls.forEach((b) => { [b.x, b.y] = cl([b.x, b.y]); }); persist(); draw(); };
-    $("#lpk").onchange = (e) => { Lay.pocket = e.target.value; persist(); draw(); };
-    document.querySelectorAll("#addb [data-n]").forEach((b) => b.onclick = () => { const n = +b.dataset.n, i = Lay.balls.findIndex((x) => x.n === n); if (i >= 0) { Lay.balls.splice(i, 1); if (Lay.ob === n) Lay.ob = Lay.balls[0] ? Lay.balls[0].n : null; } else { const sp = freeSpot(); Lay.balls.push({ n, x: sp[0], y: sp[1] }); if (!Lay.ob) Lay.ob = n; } sel = null; persist(); draw(); });
+    const lsize = $("#lsize"); if (lsize) lsize.onchange = (e) => { Lay.size = e.target.value; T = TABLES[Lay.size]; const cl = (p) => [Math.min(p[0], T.L - R), Math.min(p[1], T.W - R)]; if (Lay.cb) Lay.cb = cl(Lay.cb); if (Lay.target) Lay.target = cl(Lay.target); Lay.balls.forEach((b) => { [b.x, b.y] = cl([b.x, b.y]); }); persist(); draw(); };
+    const lpk = $("#lpk"); if (lpk) lpk.onchange = (e) => { setPocket(e.target.value); draw(); };
+    const auto = $("#lpkauto"); if (auto) auto.onclick = () => { setPocket("auto"); draw(); };
     const mk = $("#mkob"); if (mk) mk.onclick = () => { Lay.ob = sel.n; persist(); draw(); };
     const sn = $("#setn"); if (sn) sn.onchange = (e) => { const n = +e.target.value; const o = Lay.balls.find((b) => b.n === n && b !== sel); if (o) o.n = 0; sel.n = n; persist(); draw(); };
-    const db = $("#delb"); if (db) db.onclick = () => { Lay.balls.splice(Lay.balls.indexOf(sel), 1); sel = null; persist(); draw(); };
+    const db = $("#delb"); if (db) db.onclick = () => { Lay.balls.splice(Lay.balls.indexOf(sel), 1); if (Lay.ob === sel.n) Lay.ob = Lay.balls[0] ? Lay.balls[0].n : null; sel = null; persist(); draw(); };
     document.querySelectorAll(".cand").forEach((c) => c.onclick = () => { showIdx = +c.dataset.ci; draw(); });
     const sa = $("#showall"); if (sa) sa.onclick = () => { showIdx = showIdx === -1 ? 0 : -1; draw(); };
     $("#lsave").onclick = () => { Lay.name = $("#lname").value.trim() || ("Layout " + new Date().toLocaleString()); Lay.notes = $("#lnotes").value; const all = LS("pt_layouts", []); all.unshift(Object.assign(JSON.parse(JSON.stringify(Lay)), { date: new Date().toISOString() })); SS("pt_layouts", all); persist(); alert("Saved: " + Lay.name); };
     $("#lreset").onclick = () => { Lay = defLayout(); T = TABLES["9"]; sel = null; persist(); draw(); };
-    const svg = $("#labsvg"), g = $("#labg"); let drag = null, el = null, moved = false, start = null, cur = null;
+    const fsbtn = $("#labfsbtn"); if (fsbtn) fsbtn.onclick = () => enterFS();
+    const fsx = $("#labfsx"); if (fsx) fsx.onclick = () => exitFS();
+    const addb = $("#labadd"); if (addb) addb.onclick = () => { pickOn = !pickOn; draw(); };
+    const pickx = $("#labpickx"); if (pickx) pickx.onclick = () => { pickOn = false; draw(); };
+    const rack9 = $("#labrack9"); if (rack9) rack9.onclick = () => { placeRack(9); persist(); draw(); };
+    const rack8 = $("#labrack8"); if (rack8) rack8.onclick = () => { placeRack(8); persist(); draw(); };
+    const clr = $("#labclear"); if (clr) clr.onclick = () => { Lay.balls = []; Lay.ob = null; sel = null; persist(); draw(); };
+    let holdT = null, held = false;
+    document.querySelectorAll("#labpick [data-add]").forEach((b) => {
+      const go = (long) => {
+        const key = b.dataset.add === "cb" ? "cb" : +b.dataset.add;
+        if (long && key !== "cb"){
+          const ball = Lay.balls.find((x) => x.n === key);
+          if (ball){ Lay.ob = key; sel = ball; persist(); draw(); return; }
+        }
+        toggleBall(key); persist(); draw();
+      };
+      b.onclick = () => { if (held) { held = false; return; } go(false); };
+      b.addEventListener("pointerdown", () => { held = false; clearTimeout(holdT); holdT = setTimeout(() => { held = true; go(true); }, 480); });
+      const cancel = () => { clearTimeout(holdT); };
+      b.addEventListener("pointerup", cancel); b.addEventListener("pointerleave", cancel); b.addEventListener("pointercancel", cancel);
+    });
+    const snap = $("#labsnap"); if (snap) snap.onclick = () => { shotMsg = ""; captureTable().then((m) => { shotMsg = m || ""; if (shotMsg && _redraw) _redraw(); }).catch((err) => { shotMsg = err && err.message ? err.message : "Screenshot failed."; if (_redraw) _redraw(); }); };
+    const svg = $("#labsvg"), g = $("#labg"); let drag = null, el = null, moved = false, start = null, cur = null, pkTap = null;
     const toModel = (ev) => { const pt = svg.createSVGPoint(); pt.x = ev.clientX; pt.y = ev.clientY; const q = pt.matrixTransform(g.getScreenCTM().inverse()); return [q.x, q.y]; };
     const posOf = (d) => d === "cb" ? Lay.cb : d === "tgt" ? Lay.target : [Lay.balls[+d.slice(1)].x, Lay.balls[+d.slice(1)].y];
-    // iOS: only a touch that starts on a ball (table unlocked) is claimed; everything else scrolls the page.
+    // iOS: only a touch that starts on a ball (table unlocked) is claimed; everything else scrolls the page, including pocket taps.
     const onBall = (ev) => !isLocked() && ev.target && ev.target.closest && ev.target.closest("[data-drag]");
+    const onPk = (ev) => ev.target && ev.target.closest && ev.target.closest("[data-pk]");
     svg.addEventListener("touchstart", (ev) => { if (onBall(ev)) ev.preventDefault(); }, { passive: false });
     svg.addEventListener("touchmove", (ev) => { if (drag) ev.preventDefault(); }, { passive: false });
-    $("#lablock").onclick = () => { SS("pt_lab_lock", !isLocked()); if (isLocked()) sel = null; draw(); };
-    svg.addEventListener("pointerdown", (ev) => { if (!onBall(ev)) { el = null; drag = null; return; } el = ev.target.closest("[data-drag]"); drag = el.dataset.drag; moved = false; start = toModel(ev); cur = posOf(drag).slice(); svg.setPointerCapture(ev.pointerId); ev.preventDefault(); });
-    svg.addEventListener("pointermove", (ev) => { if (!drag) return; const m = toModel(ev), o = posOf(drag); if (!moved && Math.hypot(m[0] - start[0], m[1] - start[1]) < 0.8) return; moved = true;
+    const lkbtn = $("#lablock"); if (lkbtn) lkbtn.onclick = () => { SS("pt_lab_lock", !isLocked()); if (isLocked()) sel = null; draw(); };
+    svg.addEventListener("pointerdown", (ev) => {
+      if (onBall(ev)){
+        pkTap = null; el = ev.target.closest("[data-drag]"); drag = el.dataset.drag; moved = false; start = toModel(ev); cur = posOf(drag).slice(); svg.setPointerCapture(ev.pointerId); ev.preventDefault(); return;
+      }
+      el = null; drag = null;
+      const pkEl = onPk(ev);
+      if (pkEl) pkTap = { id: pkEl.dataset.pk, x: ev.clientX, y: ev.clientY };
+      else pkTap = null;
+    });
+    svg.addEventListener("pointermove", (ev) => {
+      if (pkTap && Math.hypot(ev.clientX - pkTap.x, ev.clientY - pkTap.y) > 14) pkTap = null;
+      if (!drag) return; const m = toModel(ev), o = posOf(drag); if (!moved && Math.hypot(m[0] - start[0], m[1] - start[1]) < 0.8) return; moved = true;
       cur = [Math.max(R, Math.min(T.L - R, o[0] + m[0] - start[0])), Math.max(R, Math.min(T.W - R, o[1] + m[1] - start[1]))];
-      el.setAttribute("transform", `translate(${cur[0] - o[0]},${cur[1] - o[1]})`); });
-    const up = () => { if (!drag) return; const d = drag; drag = null;
+      el.setAttribute("transform", `translate(${cur[0] - o[0]},${cur[1] - o[1]})`);
+    });
+    const up = (ev) => {
+      if (pkTap && ev && Math.hypot((ev.clientX || pkTap.x) - pkTap.x, (ev.clientY || pkTap.y) - pkTap.y) < 14){
+        const id = pkTap.id; pkTap = null;
+        setPocket(Lay.pocket === id ? "auto" : id);
+        persist(); draw(); return;
+      }
+      pkTap = null;
+      if (!drag) return; const d = drag; drag = null;
       if (moved) { if (d === "cb") Lay.cb = cur; else if (d === "tgt") Lay.target = cur; else { const b = Lay.balls[+d.slice(1)]; b.x = cur[0]; b.y = cur[1]; } }
-      else sel = d === "cb" ? "cb" : d === "tgt" ? null : Lay.balls[+d.slice(1)];
-      persist(); draw(); };
+      else if (d !== "tgt"){
+        if (d === "cb") sel = "cb";
+        else { sel = Lay.balls[+d.slice(1)]; if (sel && sel.n) Lay.ob = sel.n; }
+      }
+      persist(); draw();
+    };
     svg.addEventListener("pointerup", up); svg.addEventListener("pointercancel", up);
   };
-  const freeSpot = () => { for (let i = 0; i < 200; i++){ const p = [R + Math.random() * (T.L - 2 * R), R + Math.random() * (T.W - 2 * R)]; if ([Lay.cb, ...Lay.balls.map((b) => [b.x, b.y])].every((q) => !q || v2.len(v2.sub(p, q)) > 3 * R)) return p; } return [T.L / 2, T.W / 2]; };
   draw();
   window.onorientationchange = () => { if (st.view === "lab") draw(); };
 };
@@ -168,12 +456,12 @@ function renderSaved($, esc, save, st){
   let h = `<div class="row"><button class="btn" id="exp">Export all (JSON)</button><label class="btn ghost" style="display:inline-flex;align-items:center;justify-content:center">Import JSON<input type="file" id="imp" accept="application/json,.json" style="display:none"></label></div>`;
   h += all.length ? all.map((l, i) => `<div class="card"><div class="t">${esc(l.name)}</div><div class="meta">${new Date(l.date).toLocaleString()} · ${TABLES[l.size] ? TABLES[l.size].name : l.size} · ${l.balls.length} object ball(s)</div>${l.notes ? `<div class="desc">${esc(l.notes)}</div>` : ""}<div class="row"><button class="btn" data-ld="${i}">Load</button><button class="btn ghost" data-del="${i}">Delete</button></div></div>`).join("") : `<div class="callout">No saved layouts yet. Set up a shot on the Table tab and tap Save.</div>`;
   $("#main").innerHTML = h;
-  document.querySelectorAll("[data-ld]").forEach((b) => b.onclick = () => { SS("pt_lab_cur", all[+b.dataset.ld]); st.labtab = "table"; window.renderLab($, esc, save, st); });
+  document.querySelectorAll("[data-ld]").forEach((b) => b.onclick = () => { const lay = all[+b.dataset.ld]; SS("pt_lab_cur", lay); SS("pt_lab_pocket", (lay && lay.pocket) || "auto"); st.labtab = "table"; window.renderLab($, esc, save, st); });
   document.querySelectorAll("[data-del]").forEach((b) => b.onclick = () => { if (confirm("Delete this layout?")) { all.splice(+b.dataset.del, 1); SS("pt_layouts", all); renderSaved($, esc, save, st); } });
   $("#exp").onclick = () => { const blob = new Blob([JSON.stringify({ app: "Road Warrior Shot Lab", version: 1, layouts: all }, null, 1)], { type: "application/json" }); const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = "road-warrior-shotlab-layouts.json"; document.body.appendChild(a); a.click(); a.remove(); };
   $("#imp").onchange = (e) => { const f = e.target.files[0]; if (!f) return; f.text().then((t) => { try { const j = JSON.parse(t); const arr = Array.isArray(j) ? j : j.layouts || [j]; const ok = arr.filter((l) => l && l.balls && l.size); SS("pt_layouts", ok.concat(all)); alert("Imported " + ok.length + " layout(s)."); renderSaved($, esc, save, st); } catch (err) { alert("That file isn't a Shot Lab JSON export."); } }); };
 }
-window.ShotLab = { analyze, TABLES, pockets, R, approach, simCB };
+window.ShotLab = { analyze, TABLES, pockets, R, approach, simCB, evalPocket, PKNAME, captureTable };
 })();
 // ---------- Photo to layout (all on-device; nothing is uploaded) ----------
 (function(){
