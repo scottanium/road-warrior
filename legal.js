@@ -18,7 +18,7 @@ function noticeHTML(){
   paras.forEach((p, i) => {
     const t = p.split("\n").join(" ");
     if (i === 0) { h += `<h1 id="ptlg-h" style="font-size:22px;margin:0 0 14px">${esc(t)}</h1>`; return; }
-    if (/^\[ I Agree \]\s+\[ Exit \]$/.test(t)) { h += `<div style="margin-top:18px"><button id="ptlg-ok" style="${BTN};background:var(--accent,#4cc38a);color:#fff">I Agree</button><button id="ptlg-exit" style="${BTN};background:transparent;color:var(--text,#e9efe9)">Exit</button></div>`; return; }
+    if (/^\[ I Agree \]\s+\[ Exit \]$/.test(t)) { h += `<div style="margin-top:18px"><button id="ptlg-ok" style="${BTN};background:var(--accent,#4cc38a);color:var(--on-accent,#fff)">I Agree</button><button id="ptlg-exit" style="${BTN};background:transparent;color:var(--text,#e9efe9)">Exit</button></div>`; return; }
     h += `<p style="margin:0 0 14px">${esc(t).replace("LICENSE", '<a href="#" id="ptlg-lic" style="color:var(--accent,#4cc38a)">LICENSE</a>')}</p>`;
   });
   return h;
@@ -42,7 +42,7 @@ function gate(){
   setTimeout(() => { const b = g.querySelector("#ptlg-ok"); if (b) b.focus(); }, 0);
 }
 function blocked(g){
-  g.innerHTML = `<div style="max-width:640px;margin:0 auto"><h1 id="ptlg-h" style="font-size:22px;margin:0 0 14px">The Road Warrior: Pool Tracker and Trainer can't be used</h1><p style="margin:0 0 18px">This app can't be used without agreeing to the notice.</p><button id="ptlg-again" style="${BTN};background:var(--accent,#4cc38a);color:#fff">View the notice again</button></div>`;
+  g.innerHTML = `<div style="max-width:640px;margin:0 auto"><h1 id="ptlg-h" style="font-size:22px;margin:0 0 14px">The Road Warrior: Pool Tracker and Trainer can't be used</h1><p style="margin:0 0 18px">This app can't be used without agreeing to the notice.</p><button id="ptlg-again" style="${BTN};background:var(--accent,#4cc38a);color:var(--on-accent,#fff)">View the notice again</button></div>`;
   g.querySelector("#ptlg-again").onclick = gate;
 }
 if (!agreed()) gate();

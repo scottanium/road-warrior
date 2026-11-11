@@ -254,6 +254,7 @@ function renderMore(){
   $("#headx").innerHTML = "";
   const it = [["warm","⏱️","Pre-Match Warm-Up","10/20/30-minute routine with a timer"],["geo","📐","Geometry","19 concepts with diagrams, cut-angle table"],["rules","⚖️","Rules Compare","Rule differences and terms when you switch leagues"],["rate","🏅","Ratings & Rules","Fargo, UPL, CSI/BCA, NAPA, TAP, VNEA, IBA, ACS, WPA"],["prof","⚙️","Profile & Settings","Level, handedness, eyes, time, games, weaknesses"],["log","📈","Practice Log","Scores and consistency"],["ins","👥","Instructors & Channels","Who to learn from"],["install","📲","Install app","Add it to your Home Screen"],["license","📄","License","MIT License, full text"]];
   $("#main").innerHTML = `<div class="card menu">${it.map(([v, i, t, d]) => `<a href="#${v}" data-go="${v}"><span class="i">${i}</span><span>${t}<small>${d}</small></span></a>`).join("")}</div>` + `<div class="meta" style="text-align:center;margin-top:10px">The Road Warrior: Pool Tracker and Trainer</div>`;
+  if (window.PT_Theme && PT_Theme.sectionHTML) { $("#main").insertAdjacentHTML("afterbegin", PT_Theme.sectionHTML()); PT_Theme.wire(); }
   if (window.Money) { $("#main").insertAdjacentHTML("beforeend", window.Money.settingHTML(esc)); window.Money.wireSetting(); }
   document.querySelectorAll("[data-go]").forEach((a) => a.onclick = (e) => { e.preventDefault(); if (a.dataset.go === "install") { if (window.PT_Install) window.PT_Install.open(); return; } st.view = a.dataset.go; save(); render(); });
 }
