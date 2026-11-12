@@ -242,6 +242,23 @@ body.labfs-on #tblwrap.labfs-overlay>.labpick{margin:0;border-radius:12px 12px 0
 .credit-links{display:flex;flex-wrap:wrap;gap:8px;margin:8px 0}
 .credit-links a.btn{min-height:36px;padding:0 12px;font-size:13px;font-weight:600}
 .credit-req{font-size:13px}
+
+/* Get Started tour */
+#pttour,#pttour-welcome{position:fixed;inset:0;z-index:40;pointer-events:auto}
+#pttour.pttour-fs,#pttour-welcome.pttour-fs{display:none!important}
+#pttour-welcome .pttour-scrim{position:absolute;inset:0;background:rgba(0,0,0,.62)}
+#pttour-spot{position:fixed;z-index:1;box-shadow:0 0 0 2px var(--accent),0 0 0 9999px rgba(0,0,0,.62);pointer-events:none;border-radius:14px}
+.pttour-card{position:fixed;z-index:2;left:12px;right:12px;width:auto;max-width:400px;background:var(--card);color:var(--text);border:1px solid color-mix(in srgb,var(--accent) 35%,var(--line));border-radius:14px;padding:14px 14px 12px;box-shadow:0 10px 28px rgba(0,0,0,.45);font-size:15px;line-height:1.4}
+.pttour-welcome-card{left:50%;right:auto;top:50%;width:calc(100% - 32px);transform:translate(-50%,-50%)}
+.pttour-card h2{font-size:18px;margin:0 0 8px}
+.pttour-card p{margin:0 0 12px;color:var(--text)}
+.pttour-count{color:var(--sub);font-size:13px;font-weight:600;margin:0 0 4px}
+.pttour-acts{display:flex;flex-wrap:wrap;gap:8px;justify-content:flex-end}
+.pttour-acts .btn{flex:0 0 auto;min-width:88px}
+.pttour-acts .btn:disabled{opacity:.4}
+body.tcproj-on #pttour,body.tcproj-on #pttour-welcome,body.labfs-on #pttour,body.labfs-on #pttour-welcome{display:none!important}
+:fullscreen #pttour,:fullscreen #pttour-welcome,:-webkit-full-screen #pttour,:-webkit-full-screen #pttour-welcome{display:none!important}
+@media (prefers-reduced-motion: reduce){#pttour-spot,.pttour-card{transition:none}}
 </style>
 <script>
 (function(){
@@ -324,6 +341,7 @@ apply(load());
 <script src="tablecapture.js"></script>
 <script src="theme.js"></script>
 <script src="credits.js"></script>
+<script src="tour.js"></script>
 <script src="app.js"></script>
 <script>if('serviceWorker' in navigator){navigator.serviceWorker.register('sw.js')}</script>
 </body>

@@ -65,9 +65,10 @@
   window.addEventListener("resize", setH);
   // auto-show: only when not installed, after the legal notice is accepted, not on desktop without a prompt
   const legalOK = () => { if (document.getElementById("ptlg")) return false; try { const v = JSON.parse(localStorage.getItem("poolTrainer.legalAgreed")); return !!(v && v.version); } catch (e) { return !!window.__ptAgreedSession; } };
+  const tourBusy = () => !!(document.getElementById("pttour") || document.getElementById("pttour-welcome") || (window.PT_Tour && PT_Tour.active && PT_Tour.active()));
   function eligible(){ const s = ld(); if (standalone() || s.never || s.installed || (s.snoozeUntil && Date.now() < s.snoozeUntil)) return false; const v = variant(); return v === "ios" || v === "iosother" || v === "android" || (v === "desktop" && !!deferred); }
   let waiting = false;
-  function autoShow(){ if (open.el || waiting || !eligible()) return; waiting = true; const t = setInterval(() => { if (!eligible()) { clearInterval(t); waiting = false; return; } if (legalOK()) { clearInterval(t); setTimeout(() => { waiting = false; if (eligible() && legalOK() && !document.getElementById("ptlg")) open(false); }, 1500); } }, 700); }
+  function autoShow(){ if (open.el || waiting || !eligible()) return; waiting = true; const t = setInterval(() => { if (!eligible()) { clearInterval(t); waiting = false; return; } if (legalOK() && !tourBusy()) { clearInterval(t); setTimeout(() => { waiting = false; if (eligible() && legalOK() && !document.getElementById("ptlg") && !tourBusy()) open(false); else if (eligible()) autoShow(); }, 1500); } }, 700); }
   if (document.readyState === "complete") autoShow(); else window.addEventListener("load", autoShow);
   window.PT_Install = { open: () => open(true), close, variant, standalone };
 })();
