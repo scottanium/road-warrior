@@ -1,7 +1,7 @@
 // Shot Lab: to-scale table, drag balls, shot suggestions (approximate training aid), photo-to-layout.
 (function(){
 const R = 1.125; // ball radius, in (2.25 in ball, WPA)
-const TABLES = { "7": { L: 78, W: 39, name: "7 ft (78x39 in, typical bar box; not regulated)" }, "8": { L: 88, W: 44, name: "8 ft (88x44 in)" }, "8p": { L: 92, W: 46, name: "8 ft pro / 8.5 ft (92x46 in, WPA 8 ft)" }, "9": { L: 100, W: 50, name: "9 ft (100x50 in, WPA)" } };
+const TABLES = { "7": { L: 78, W: 39, name: "7 ft (78x39 in, typical bar box; not regulated)" }, "8": { L: 88, W: 44, name: "8 ft (88x44 in)" }, "8p": { L: 92, W: 46, name: "8 ft pro / 8.5 ft (92x46 in, WPA 8 ft)" }, "9": { L: 100, W: 50, name: "9 ft (100x50 in, WPA)" }, "10": { L: 112, W: 56, name: "10 ft (112x56 in, oversize)" } };
 const MOUTH = { corner: 4.5625, side: 5.0625 }; // WPA ranges 4.5-4.625 / 5-5.125 in (midpoints)
 const COL = { 1: "#f5c518", 2: "#1e5bd8", 3: "#d32f2f", 4: "#6a1b9a", 5: "#ef6c00", 6: "#1b8f3a", 7: "#7b1f1f", 8: "#111" };
 const ballCol = (n) => COL[n > 8 ? n - 8 : n] || "#9e9e9e";
@@ -295,6 +295,7 @@ function fsBarHTML(esc){
   h += `<button type="button" id="lablock" class="btn lablock-fs ${lk ? "on" : ""}" aria-pressed="${lk}">${lk ? "Unlock" : "Lock"}</button>`;
   h += `<button type="button" class="btn" id="labfsx">Exit full screen</button>`;
   h += `</div>`;
+  if (window.TableCapture) h += `<div class="labfs-sub"><button type="button" class="btn ghost" id="labproj">📽 Project on table</button></div>`;
   if (Lay.pocket && Lay.pocket !== "auto") h += `<div class="labfs-sub"><button type="button" class="btn ghost" id="lpkauto">Auto pocket</button><span class="meta">Aiming at the ${PKNAME[Lay.pocket]}. Tap that pocket again for Auto.</span></div>`;
   if (shotMsg) h += `<div class="meta labfs-status" id="labsnapmsg">${esc(shotMsg)}</div>`;
   return h;
@@ -340,10 +341,12 @@ window.renderLab = function($, esc, save, st){
   load();
   wireFSOnce();
   $("#title").textContent = "Shot Lab";
-  $("#headx").innerHTML = `<div class="chips">${[["table","Table"],["photo","📷 Photo"],["saved","Saved"]].map(([k, l]) => `<button class="chip ${(st.labtab || "table") === k ? "on" : ""}" data-lt="${k}">${l}</button>`).join("")}</div>`;
+  $("#headx").innerHTML = `<div class="chips">${[["table","Table"],["photo","📷 Photo"],["cap","🎥 Capture"],["saved","Saved"]].map(([k, l]) => `<button class="chip ${(st.labtab || "table") === k ? "on" : ""}" data-lt="${k}">${l}</button>`).join("")}</div>`;
   document.querySelectorAll("[data-lt]").forEach((b) => b.onclick = () => { st.labtab = b.dataset.lt; window.renderLab($, esc, save, st); });
   const tab = st.labtab || "table";
   if (tab !== "table" && fsOn) { fsOn = false; pickOn = false; document.body.classList.remove("labfs-on"); document.body.style.top = ""; try { const ex = document.exitFullscreen || document.webkitExitFullscreen; if (ex && (document.fullscreenElement || document.webkitFullscreenElement)) ex.call(document); } catch (e) {} }
+  if (tab !== "cap" && window.TableCapture) window.TableCapture.stop();
+  if (tab === "cap" && window.TableCapture) return window.TableCapture.render($, esc, st, save);
   if (tab === "photo") return window.PhotoLab($, esc, () => { st.labtab = "table"; window.renderLab($, esc, save, st); }, (lay) => { Lay = Object.assign(defLayout(), lay); T = TABLES[Lay.size]; persist(); });
   if (tab === "saved") return renderSaved($, esc, save, st);
   const draw = () => {
@@ -385,6 +388,7 @@ window.renderLab = function($, esc, save, st){
     $("#lreset").onclick = () => { Lay = defLayout(); T = TABLES["9"]; sel = null; persist(); draw(); };
     const fsbtn = $("#labfsbtn"); if (fsbtn) fsbtn.onclick = () => enterFS();
     const fsx = $("#labfsx"); if (fsx) fsx.onclick = () => exitFS();
+    const pj = $("#labproj"); if (pj) pj.onclick = () => window.TableCapture.projectShotLab(Lay);
     const addb = $("#labadd"); if (addb) addb.onclick = () => { pickOn = !pickOn; draw(); };
     const pickx = $("#labpickx"); if (pickx) pickx.onclick = () => { pickOn = false; draw(); };
     const rack9 = $("#labrack9"); if (rack9) rack9.onclick = () => { placeRack(9); persist(); draw(); };
