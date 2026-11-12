@@ -393,5 +393,5 @@ function A_ui($, esc, url, vbtns, save, st, rerender){
   }
   return { renderProfile, renderTests, renderAPlan, renderWarm, renderRatings, todayAdaptive, stopT };
 }
-window.Adaptive = { TESTS, AREAS, BUCHART, generate, areaStats, prof, DEFPROF, ratings, warmSteps, ui: A_ui, fOf, bench, norm };
+window.Adaptive = { TESTS, AREAS, BUCHART, generate, areaStats, prof, DEFPROF, ratings, warmSteps, ui: A_ui, fOf, bench, norm, AV, GAMEV, WU };
 })();

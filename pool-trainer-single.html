@@ -234,6 +234,13 @@ body.labfs-on .labfs-stage .labtbl{flex:1 1 auto;max-width:100%;height:100%;disp
 body.labfs-on .labfs-stage #labsvg{width:auto!important;height:auto!important;max-width:100%;max-height:100%;margin:0 auto}
 body.labfs-on #tblwrap.labfs-overlay>.labshot-msg,body.labfs-on #tblwrap.labfs-overlay>.callout{margin:6px 10px;flex:0 0 auto}
 body.labfs-on #tblwrap.labfs-overlay>.labpick{margin:0;border-radius:12px 12px 0 0;flex:0 1 auto;max-height:50%;min-height:0;overflow:auto;padding-bottom:12px}
+
+.credline{font-size:12px;color:var(--sub);text-align:center;margin:18px 0 8px;line-height:1.45}
+.credline a,.credits-intro a,.credit-req{color:var(--accent)}
+.credits-intro p{margin:0 0 12px}
+.credit-links{display:flex;flex-wrap:wrap;gap:8px;margin:8px 0}
+.credit-links a.btn{min-height:36px;padding:0 12px;font-size:13px;font-weight:600}
+.credit-req{font-size:13px}
 </style>
 <script>
 (function(){
@@ -2166,7 +2173,7 @@ function A_ui($, esc, url, vbtns, save, st, rerender){
   }
   return { renderProfile, renderTests, renderAPlan, renderWarm, renderRatings, todayAdaptive, stopT };
 }
-window.Adaptive = { TESTS, AREAS, BUCHART, generate, areaStats, prof, DEFPROF, ratings, warmSteps, ui: A_ui, fOf, bench, norm };
+window.Adaptive = { TESTS, AREAS, BUCHART, generate, areaStats, prof, DEFPROF, ratings, warmSteps, ui: A_ui, fOf, bench, norm, AV, GAMEV, WU };
 })();
 
 </script>
@@ -3942,6 +3949,337 @@ root.TableCapture = {
 
 </script>
 <script>
+// Credits page: disclaimer plus every creator whose video is used in the app.
+(function () {
+const CONTACT_EMAIL = "scottanium@gmail.com";
+
+// Name variants (video credits, title parentheticals, directory listings) → one display name.
+const CANON = {
+  "Dr. Dave Alciatore": "Dr. Dave Alciatore",
+  "Dr. Dave": "Dr. Dave Alciatore",
+  "Dr. Dave Alciatore (AZBilliards)": "Dr. Dave Alciatore",
+  "Dr. Dave Pool Info (website)": "Dr. Dave Alciatore",
+  "Dr. Dave on Facebook": "Dr. Dave Alciatore",
+  "Dr. Dave on TikTok": "Dr. Dave Alciatore",
+  "Tor Lowry": "Tor Lowry",
+  "Tor Lowry (Zero-X)": "Tor Lowry",
+  "Tor Lowry (Zero-X Billiards)": "Tor Lowry",
+  "Tor Lowry on X (@ZeroXBilliards)": "Tor Lowry",
+  "Tor Lowry on Instagram": "Tor Lowry",
+  "Zero-X Billiards (Tor Lowry) on TikTok": "Tor Lowry",
+  "Florian Kohler (Venom)": "Florian Kohler (Venom)",
+  "Florian 'Venom' Kohler": "Florian Kohler (Venom)",
+  "Florian 'Venom' Kohler (APA)": "Florian Kohler (Venom)",
+  "Venom, APA": "Florian Kohler (Venom)",
+  "Venom Trickshots on Instagram": "Florian Kohler (Venom)",
+  "Florian Kohler on X (@Venomtrickshots)": "Florian Kohler (Venom)",
+  "Venom Trickshots on TikTok": "Florian Kohler (Venom)",
+  "Niels Feijen": "Niels Feijen",
+  "Niels Feijen (Kamui)": "Niels Feijen",
+  "Feijen": "Niels Feijen",
+  "Niels Feijen on TikTok": "Niels Feijen",
+  "Missed Again!": "Missed Again! (JC)",
+  "Missed Again! (JC)": "Missed Again! (JC)",
+  "Lil' Chris": "Lil' Chris",
+  "Lil' Chris (Nick Varner drill)": "Lil' Chris",
+  "FargoRate (Mike Page)": "Mike Page (FargoRate)",
+  "Mike Page (FargoBilliards)": "Mike Page (FargoRate)",
+  "Mike Page": "Mike Page (FargoRate)",
+  "FargoRate": "Mike Page (FargoRate)",
+  "Stephen Hendry": "Stephen Hendry",
+  "Stephen Hendry's Cue Tips": "Stephen Hendry",
+  "Stephen Hendry's Cue Tips on TikTok": "Stephen Hendry",
+  "Barry Stark": "Barry Stark",
+  "Barry Stark Snooker Coach": "Barry Stark",
+  "Michael Holt": "Michael Holt",
+  "Michael Holt Snooker Coaching": "Michael Holt",
+  "Bryan Mitchell (FX Billiards)": "Bryan Mitchell (FX Billiards)",
+  "FX Billiards": "Bryan Mitchell (FX Billiards)",
+  "FX Billiards (Bryan Mitchell)": "Bryan Mitchell (FX Billiards)",
+  "FX Billiards podcast": "Bryan Mitchell (FX Billiards)",
+  "FX Billiards on X (@fxbilliards)": "Bryan Mitchell (FX Billiards)",
+  "FX Billiards on Instagram": "Bryan Mitchell (FX Billiards)",
+  "FX Billiards on TikTok": "Bryan Mitchell (FX Billiards)",
+  "Jasmin Ouschan": "Jasmin Ouschan",
+  "Ouschan": "Jasmin Ouschan",
+  "Jasmin Ouschan on TikTok": "Jasmin Ouschan",
+  "Barton Snooker": "Barton Snooker",
+  "Barton": "Barton Snooker",
+  "Pool School (UK)": "Pool School (UK)",
+  "Pool School": "Pool School (UK)",
+  "Tom Rossman (Dr. Cue)": "Tom Rossman (Dr. Cue)",
+  "Dr. Cue": "Tom Rossman (Dr. Cue)",
+  "Joe Tucker": "Joe Tucker",
+  "Max Eberle": "Max Eberle",
+  "Max Eberle on X (@maxeberle)": "Max Eberle",
+  "Bert Kinister": "Bert Kinister",
+  "Jerry Briesath": "Jerry Briesath",
+  "Jerry Briesath (azbtv)": "Jerry Briesath",
+  "Mike Sigel": "Mike Sigel",
+  "Mike Sigel (Pro Tour Network)": "Mike Sigel",
+  "Scott Lee": "Scott Lee",
+  "Scott Lee (SportVideos)": "Scott Lee",
+  "Mark Wilson": "Mark Wilson",
+  "Mark Wilson (Accu-Stats clinic)": "Mark Wilson",
+  "Darren Appleton": "Darren Appleton",
+  "CJ Wiley": "CJ Wiley",
+  "Sharivari": "Sharivari",
+  "Shortstop On Pool": "Shortstop On Pool",
+  "Mick Hill": "Mick Hill",
+  "Tony Chohan": "Tony Chohan",
+  "Shaun Murphy": "Shaun Murphy",
+  "Fred Caudron": "Fred Caudron",
+  "Yeu Bida 3C": "Yeu Bida 3C",
+  "Brandon Gramse (BrandonBilliardGuy)": "Brandon Gramse (BrandonBilliardGuy)",
+  "Night Café": "Night Café",
+  "Night Café (3-cushion)": "Night Café",
+  "Ron, the Pool Student": "Ron, the Pool Student",
+  "Ron, the Pool Student on Instagram": "Ron, the Pool Student",
+  "Billiard University": "Billiard University",
+  "Corey Deuel": "Corey Deuel",
+  "Jeremy Jones": "Jeremy Jones",
+  "Lee Brett": "Lee Brett",
+  "pocketed! (Norbert Gruber-Filippits)": "pocketed! (Norbert Gruber-Filippits)",
+  "pocketed! The Pool Billiard Podcast": "pocketed! (Norbert Gruber-Filippits)",
+  "Predator Cues": "Predator Cues",
+  "Predator Cues on X (@PredatorCues)": "Predator Cues",
+  "Predator Cues on Instagram": "Predator Cues",
+  "Predator Cues on TikTok": "Predator Cues",
+  "InsidePOOL": "InsidePOOL",
+  "Inside POOL Magazine on X (@InsidePOOLmag)": "InsidePOOL",
+  "Dick Jaspers": "Dick Jaspers",
+  "Dick Jaspers (Kozoom)": "Dick Jaspers",
+  "Dick Jaspers (via Deno Andrews)": "Dick Jaspers",
+  "Ralph Eckert": "Ralph Eckert",
+  "Ralph Eckert (Kamui)": "Ralph Eckert",
+  "Thorsten Hohmann": "Thorsten Hohmann",
+  "Thorsten Hohmann (Kamui)": "Thorsten Hohmann",
+  "Shane Van Boening (fan upload)": "Shane Van Boening (fan upload)",
+  "Slivovich": "Slivovich"
+};
+
+// Videos whose titles don't name a creator; identified from Geometry sources (Dr. Dave series).
+const ID_CREATOR = {
+  "yr8jGPcyQ1M": "Dr. Dave Alciatore",
+  "-jUL_8aZ2LU": "Dr. Dave Alciatore",
+  "5C7143wIc-M": "Dr. Dave Alciatore",
+  "s5rbS2vuwdI": "Dr. Dave Alciatore",
+  "XdjdgePMXFg": "Dr. Dave Alciatore",
+  "6-vNQwD5WDw": "Dr. Dave Alciatore",
+  "fPQEBxbByD4": "Dr. Dave Alciatore",
+  "c8ztEYGdga0": "Dr. Dave Alciatore",
+  "JgKD-nqKTlQ": "Dr. Dave Alciatore",
+  "9br8xdXEs7g": "Dr. Dave Alciatore",
+  "qdKQmL-Ulxc": "Dr. Dave Alciatore",
+  "U5Exnt3WDXA": "Dr. Dave Alciatore"
+};
+
+const APA_YT = "https://www.youtube.com/@americanpoolplayersassociation";
+const EXTRA_LINKS = {
+  "Jeremy Jones": [{ label: "APA instruction (YouTube)", url: APA_YT }],
+  "Corey Deuel": [{ label: "APA instruction (YouTube)", url: APA_YT }],
+  "Tom Rossman (Dr. Cue)": [{ label: "APA instruction (YouTube)", url: APA_YT }],
+  "Lee Brett": [{ label: "APA instruction (YouTube)", url: APA_YT }],
+  "Jerry Briesath": [{ label: "PBIA series (YouTube)", url: "https://www.youtube.com/channel/UCdzSurbFA-yl5eOMHEhBemQ" }],
+  "Ralph Eckert": [
+    { label: "YouTube", url: "https://www.youtube.com/@KAMUIBRAND" },
+    { label: "Instagram", url: "https://www.instagram.com/kamui_brand/" },
+    { label: "TikTok", url: "https://www.tiktok.com/@kamuibrand" }
+  ],
+  "Thorsten Hohmann": [
+    { label: "YouTube", url: "https://www.youtube.com/@KAMUIBRAND" },
+    { label: "Instagram", url: "https://www.instagram.com/kamui_brand/" },
+    { label: "TikTok", url: "https://www.tiktok.com/@kamuibrand" }
+  ]
+};
+
+function toCanon(raw) {
+  const s = String(raw || "").trim();
+  if (!s) return "";
+  if (CANON[s]) return CANON[s];
+  const hit = Object.keys(CANON).find((n) => n.toLowerCase() === s.toLowerCase());
+  if (hit) return CANON[hit];
+  if (/^dr\.?\s*dave\b/i.test(s)) return "Dr. Dave Alciatore";
+  if (/^(NV\s|VEPS\s|VEPP\s|HAPS\b|BU Vol)/i.test(s)) return "Dr. Dave Alciatore";
+  return s;
+}
+
+function ytEmbedUrl(id, start) {
+  let u = "https://www.youtube-nocookie.com/embed/" + encodeURIComponent(id);
+  if (start) u += "?start=" + Number(start);
+  return u;
+}
+
+function mailto(subject, body) {
+  return "mailto:" + CONTACT_EMAIL + "?subject=" + encodeURIComponent(subject) + "&body=" + encodeURIComponent(body);
+}
+function requestMailto(name) {
+  return mailto("Road Warrior credits request: " + name, "Hi, I'm " + name + " (or represent them). Please remove / change: ...");
+}
+function genericMailto() {
+  return mailto("Road Warrior credits request", "Hi, I'm a creator listed in The Road Warrior (or represent one). Please remove / change: ...");
+}
+
+function linkLabel(url) {
+  const u = String(url);
+  if (/youtube\.com|youtu\.be/i.test(u)) return "YouTube";
+  if (/facebook\.com/i.test(u)) return "Facebook";
+  if (/instagram\.com/i.test(u)) return "Instagram";
+  if (/tiktok\.com/i.test(u)) return "TikTok";
+  if (/(?:\/\/|\.)x\.com|twitter\.com/i.test(u)) return "X";
+  if (/spotify\.com|podcasts\.apple/i.test(u)) return "Podcast";
+  if (/forums\.azbilliards/i.test(u)) return "Forum";
+  return "Website";
+}
+
+function isYTId(s) {
+  return typeof s === "string" && s && !s.startsWith("http") && !s.startsWith("/") && s.length >= 8 && s.length <= 15;
+}
+
+function addName(set, raw) {
+  if (!raw) return;
+  if (/\s\/\s/.test(raw)) { String(raw).split(/\s\/\s/).forEach((p) => addName(set, p)); return; }
+  const c = toCanon(raw);
+  if (c) set.add(c);
+}
+
+function walkVids(item, onVid) {
+  if (!item) return;
+  if (Array.isArray(item) && typeof item[0] === "string") {
+    const [lab, src, t, kind] = item;
+    if (kind === "read" || kind === "none" || kind === "rest") return;
+    if (src) onVid(src, lab);
+    return;
+  }
+  if (Array.isArray(item)) { item.forEach((x) => walkVids(x, onVid)); return; }
+  if (typeof item === "object") Object.values(item).forEach((x) => walkVids(x, onVid));
+}
+
+function collect() {
+  const names = new Set();
+  const idMap = new Map();
+  function remember(id, creator) {
+    if (!isYTId(id) || !creator) return;
+    if (!idMap.has(id)) idMap.set(id, creator);
+  }
+  (typeof DATA !== "undefined" ? DATA : []).forEach((e) => {
+    if (e[6] === "YT") { addName(names, e[5]); remember(e[9], e[5]); }
+  });
+  (typeof XD !== "undefined" ? XD : []).forEach((e) => {
+    if (e[4] === "YT") { addName(names, e[3]); remember(e[7], e[3]); }
+  });
+  (typeof RC !== "undefined" ? RC : []).forEach((e) => {
+    if (e[3] === "YT") { addName(names, e[2]); remember(e[6], e[2]); }
+  });
+
+  function fromTitle(src, lab) {
+    if (!isYTId(src) && !/youtube\.com|youtu\.be/i.test(String(src || ""))) return;
+    let id = src;
+    const mUrl = String(src).match(/(?:youtu\.be\/|[?&]v=)([A-Za-z0-9_-]{11})/);
+    if (mUrl) id = mUrl[1];
+    if (idMap.has(id)) { addName(names, idMap.get(id)); return; }
+    const paren = String(lab || "").match(/\(([^)]+)\)\s*$/);
+    if (paren) { addName(names, paren[1]); return; }
+    if (ID_CREATOR[id]) { addName(names, ID_CREATOR[id]); return; }
+    if (/VEPS|VEPP|\bNV\s|HAPS|BU Vol/i.test(String(lab || ""))) addName(names, "Dr. Dave Alciatore");
+  }
+
+  if (typeof STEPV !== "undefined") walkVids(STEPV, fromTitle);
+  if (typeof BENCHV !== "undefined") walkVids(BENCHV, fromTitle);
+  if (typeof PROGV !== "undefined") walkVids(PROGV, fromTitle);
+  if (typeof BACKNV !== "undefined") walkVids(BACKNV, fromTitle);
+  if (typeof LONGERV !== "undefined") walkVids(LONGERV, fromTitle);
+  if (typeof CHECK !== "undefined") walkVids(CHECK, fromTitle);
+  if (typeof BACKV !== "undefined") walkVids(BACKV, fromTitle);
+  if (typeof GEO !== "undefined") {
+    GEO.forEach((g) => {
+      walkVids(g[7], fromTitle);
+      (g[6] || []).forEach((pair) => { if (pair && pair[1]) fromTitle(pair[1], pair[0]); });
+    });
+  }
+  const A = window.Adaptive || {};
+  if (A.TESTS) A.TESTS.forEach((t) => walkVids(t.vids, fromTitle));
+  walkVids(A.AV, fromTitle);
+  walkVids(A.GAMEV, fromTitle);
+  walkVids(A.WU, fromTitle);
+
+  const dir = typeof DIRECTORY !== "undefined" ? DIRECTORY : [];
+  const byCanon = new Map();
+  dir.forEach((d) => {
+    const c = toCanon(d[0]);
+    if (!c || !names.has(c)) return;
+    if (!byCanon.has(c)) byCanon.set(c, []);
+    byCanon.get(c).push(d);
+  });
+
+  function linksFor(name) {
+    const out = [];
+    const seen = new Set();
+    function push(label, url) {
+      if (!url || seen.has(url)) return;
+      seen.add(url);
+      out.push({ label: label, url: url });
+    }
+    (byCanon.get(name) || []).forEach((d) => push(linkLabel(d[3]), d[3]));
+    (EXTRA_LINKS[name] || []).forEach((l) => push(l.label, l.url));
+    const hasYT = out.some((l) => /youtube/i.test(l.label) || /youtube\.com|youtu\.be/i.test(l.url));
+    if (!hasYT) push("YouTube search", "https://www.youtube.com/results?search_query=" + encodeURIComponent(name));
+    return { links: out, searchOnly: !hasYT };
+  }
+
+  function descFor(name) {
+    const rows = byCanon.get(name) || [];
+    if (!rows.length) return "";
+    const exact = rows.find((d) => toCanon(d[0]) === name && d[0].length <= name.length + 8) || rows[0];
+    const prefer = rows.find((d) => d[0] === name) || rows.find((d) => /YouTube/i.test(d[2] || "") && (d[1] || "").length > 20) || exact;
+    const t = (prefer && prefer[1]) || "";
+    if (/verified via/i.test(t)) return (rows.find((d) => d[1] && !/verified via/i.test(d[1])) || prefer)[1] || "";
+    return t;
+  }
+
+  return [...names].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" })).map((name) => {
+    const L = linksFor(name);
+    return { name: name, desc: descFor(name), links: L.links, searchOnly: L.searchOnly };
+  });
+}
+
+function disclaimerHTML(esc) {
+  const tos = "https://www.youtube.com/t/terms";
+  const priv = "https://policies.google.com/privacy";
+  const mail = "mailto:" + CONTACT_EMAIL;
+  return `<div class="t" style="margin-bottom:8px">Credits</div>
+<p>The Road Warrior is a free, independent training tool. The videos in this app are created and owned by the creators listed below. They are hosted on YouTube and played through YouTube's standard embedded player, subject to YouTube's Terms of Service (<a href="${tos}" target="_blank" rel="noopener">${tos}</a>) and Google's Privacy Policy (<a href="${priv}" target="_blank" rel="noopener">${priv}</a>). No videos are copied, downloaded, or hosted by this app.</p>
+<p>The Road Warrior is not affiliated with, sponsored by, or endorsed by YouTube, Google, or any creator listed here. All names, channel names, logos, and trademarks belong to their respective owners and are used only to identify and credit them.</p>
+<p>If you're a creator listed here and would like your videos or name removed, or something changed, email <a href="${mail}">${esc(CONTACT_EMAIL)}</a> and we'll handle it promptly.</p>
+<p class="meta">Embedded YouTube videos are provided by Google and may use cookies under Google's Privacy Policy.</p>`;
+}
+
+function cardHTML(c, esc) {
+  const links = c.links.map((l) => `<a class="btn ghost" href="${esc(l.url)}" target="_blank" rel="noopener">${esc(l.label)}</a>`).join("");
+  return `<div class="card"><div class="t">${esc(c.name)}</div>
+    ${c.desc ? `<div class="desc">${esc(c.desc)}</div>` : ""}
+    <div class="credit-links">${links}</div>
+    <div class="meta"><a class="credit-req" href="${esc(requestMailto(c.name))}">Request removal or changes</a></div></div>`;
+}
+
+function lineHTML() {
+  return `<p class="credline">Videos are embedded from YouTube and belong to their creators. Not affiliated with or endorsed by any creator. <a href="#credits" data-go="credits">See Credits</a>.</p>`;
+}
+
+function render($, esc) {
+  const list = collect();
+  $("#title").textContent = "Credits";
+  $("#headx").innerHTML = "";
+  $("#main").innerHTML = `<div class="card credits-intro">${disclaimerHTML(esc)}
+    <div class="row"><a class="btn" href="${esc(genericMailto())}">Creators: request removal or changes</a></div></div>
+    <div class="count">${list.length} creators</div>${list.map((c) => cardHTML(c, esc)).join("")}`;
+}
+
+window.Credits = { render: render, collect: collect, lineHTML: lineHTML, embedUrl: ytEmbedUrl, CONTACT_EMAIL: CONTACT_EMAIL };
+})();
+
+</script>
+<script>
 (function(){
 const $ = (s) => document.querySelector(s);
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c]));
@@ -3950,7 +4288,7 @@ const S = (k, v) => localStorage.setItem(k, JSON.stringify(v));
 const inTab = (g, t) => g === "all" || g.split(",").includes(t);
 const LIBTABS = GAMES.filter((g) => g.value !== "reg" && g.value !== "ins");
 const st = Object.assign({ view: "today", game: "fund", q: "", lvl: "all", cat: "all", typ: "all", plat: "all", all: false, day: null }, L("pt_state", {}));
-{ const hv = location.hash.slice(1); if (["today","lib","plan","log","ins","geo","lab","tests","tour","more","warm","rate","prof","rules","license","install","money"].includes(hv)) st.view = hv; }
+{ const hv = location.hash.slice(1); if (["today","lib","plan","log","ins","geo","lab","tests","tour","more","warm","rate","prof","rules","license","install","money","credits"].includes(hv)) st.view = hv; }
 const save = () => S("pt_state", { view: st.view, game: st.game, lvl: st.lvl, cat: st.cat, typ: st.typ, plat: st.plat });
 const link = (s, label) => `<a class="btn" href="${esc(url(s))}" target="_blank" rel="noopener">${esc(label || "Open source")}</a>`;
 const isYT = (s) => !s.startsWith("http") && !s.startsWith("/");
@@ -4196,7 +4534,7 @@ function renderGeo(){
 function renderMore(){
   $("#title").textContent = "More";
   $("#headx").innerHTML = "";
-  const it = [["warm","⏱️","Pre-Match Warm-Up","10/20/30-minute routine with a timer"],["geo","📐","Geometry","19 concepts with diagrams, cut-angle table"],["rules","⚖️","Rules Compare","Rule differences and terms when you switch leagues"],["rate","🏅","Ratings & Rules","Fargo, UPL, CSI/BCA, NAPA, TAP, VNEA, IBA, ACS, WPA"],["prof","⚙️","Profile & Settings","Level, handedness, eyes, time, games, weaknesses"],["log","📈","Practice Log","Scores and consistency"],["ins","👥","Instructors & Channels","Who to learn from"],["install","📲","Install app","Add it to your Home Screen"],["license","📄","License","MIT License, full text"]];
+  const it = [["warm","⏱️","Pre-Match Warm-Up","10/20/30-minute routine with a timer"],["geo","📐","Geometry","19 concepts with diagrams, cut-angle table"],["rules","⚖️","Rules Compare","Rule differences and terms when you switch leagues"],["rate","🏅","Ratings & Rules","Fargo, UPL, CSI/BCA, NAPA, TAP, VNEA, IBA, ACS, WPA"],["prof","⚙️","Profile & Settings","Level, handedness, eyes, time, games, weaknesses"],["log","📈","Practice Log","Scores and consistency"],["ins","👥","Instructors & Channels","Who to learn from"],["credits","🎬","Credits","Creators whose videos are used in this app"],["install","📲","Install app","Add it to your Home Screen"],["license","📄","License","MIT License, full text"]];
   $("#main").innerHTML = `<div class="card menu">${it.map(([v, i, t, d]) => `<a href="#${v}" data-go="${v}"><span class="i">${i}</span><span>${t}<small>${d}</small></span></a>`).join("")}</div>` + `<div class="meta" style="text-align:center;margin-top:10px">The Road Warrior: Pool Tracker and Trainer</div>`;
   if (window.PT_Theme && PT_Theme.sectionHTML) { $("#main").insertAdjacentHTML("afterbegin", PT_Theme.sectionHTML()); PT_Theme.wire(); }
   if (window.Money) { $("#main").insertAdjacentHTML("beforeend", window.Money.settingHTML(esc)); window.Money.wireSetting(); }
@@ -4207,12 +4545,18 @@ function renderLicense(){
   $("#headx").innerHTML = "";
   $("#main").innerHTML = `<div class="card"><div class="t" style="margin-bottom:8px">The Road Warrior: Pool Tracker and Trainer</div><pre style="white-space:pre-wrap;word-wrap:break-word;font:13px/1.45 ui-monospace,Menlo,monospace;margin:0">${esc(window.PT_LICENSE || "")}</pre></div>`;
 }
-const MOREV = ["money","install","warm","geo","rules","license","rate","prof","log","ins","more"];
+function renderCredits(){ if (window.Credits) window.Credits.render($, esc); }
+const MOREV = ["money","install","warm","geo","rules","license","credits","rate","prof","log","ins","more"];
 function render(){
   if (window.Adaptive && aui().stopT && st.view !== "warm") aui().stopT();
   document.querySelectorAll("#tabs button").forEach((b) => b.classList.toggle("on", b.dataset.v === st.view || (b.dataset.v === "more" && MOREV.includes(st.view))));
   ({ today: renderToday, lib: renderLib, plan: renderPlan, log: renderLog, ins: renderIns, geo: renderGeo, lab: () => window.renderLab($, esc, save, st),
-     tests: () => aui().renderTests(), tour: () => tui().renderTour(), more: renderMore, warm: () => aui().renderWarm(), rate: () => aui().renderRatings(), rules: () => window.renderRules($, esc), license: renderLicense, money: () => window.Money.render($, esc, st, save) , install: () => { renderMore(); if (window.PT_Install) setTimeout(() => window.PT_Install.open(), 0); }, prof: () => aui().renderProfile() }[st.view] || renderToday)();
+     tests: () => aui().renderTests(), tour: () => tui().renderTour(), more: renderMore, warm: () => aui().renderWarm(), rate: () => aui().renderRatings(), rules: () => window.renderRules($, esc), license: renderLicense, credits: renderCredits, money: () => window.Money.render($, esc, st, save) , install: () => { renderMore(); if (window.PT_Install) setTimeout(() => window.PT_Install.open(), 0); }, prof: () => aui().renderProfile() }[st.view] || renderToday)();
+  if (st.view !== "lab" && st.view !== "credits" && window.Credits) {
+    $("#main").insertAdjacentHTML("beforeend", window.Credits.lineHTML());
+    const cl = $("#main .credline a");
+    if (cl) cl.onclick = (e) => { e.preventDefault(); st.view = "credits"; save(); render(); };
+  }
   if (history.replaceState) history.replaceState(null, "", "#" + st.view);
   document.body.classList.toggle("labmode", st.view === "lab");
   window.scrollTo(0, 0);
