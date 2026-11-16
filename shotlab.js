@@ -10,6 +10,11 @@ const SPEEDS = [["Soft", 30], ["Medium", 55], ["Firm", 85], ["Power", 120]]; // 
 const MU_S = 0.2, MU_R = 0.012, G = 386, E_RAIL = 0.75; // sliding / rolling friction, gravity in/s^2, rail restitution (rough)
 const PKNAME = { TL: "top-left corner", TS: "top side", TR: "top-right corner", BL: "bottom-left corner", BS: "bottom side", BR: "bottom-right corner" };
 const PKIDS = ["TL", "TS", "TR", "BL", "BS", "BR"];
+const RAILIDS = ["T", "B", "L", "R"];
+const RAILNAME = { T: "top long rail", B: "bottom long rail", L: "left short rail", R: "right short rail" };
+const SHOTTYPES = [["cut", "Cut"], ["bank", "Bank"], ["kick", "Kick"]];
+const showGhost = () => LS("pt_lab_showGhost", true) !== false;
+const setShowGhost = (v) => SS("pt_lab_showGhost", !!v);
 const LS = (k, d) => { try { return JSON.parse(localStorage.getItem(k)) ?? d; } catch (e) { return d; } };
 const SS = (k, v) => localStorage.setItem(k, JSON.stringify(v));
 const cssVar = (n, fb) => { try { return getComputedStyle(document.documentElement).getPropertyValue(n).trim() || fb; } catch (e) { return fb; } };
@@ -69,38 +74,145 @@ function evalPocket(p, O, C, others, T){
 }
 function bestOf(list){ return list.slice().sort((a, b) => (a.cut + a.dOP * 0.3) - (b.cut + b.dOP * 0.3))[0]; }
 
-function analyze(L, T){ // L: layout {cb:[x,y], balls:[{n,x,y}], ob: n, pocket: id|'auto', target:[x,y]|null}
-  const out = { ok: false, msg: "", cands: [], suggest: null };
+function railsOf(T){
+  return {
+    T: { id: "T", axis: "y", line: R, lo: R, hi: T.L - R },
+    B: { id: "B", axis: "y", line: T.W - R, lo: R, hi: T.L - R },
+    L: { id: "L", axis: "x", line: R, lo: R, hi: T.W - R },
+    R: { id: "R", axis: "x", line: T.L - R, lo: R, hi: T.W - R }
+  };
+}
+function pocketOnRail(pid, railId){
+  if (railId === "T") return pid === "TL" || pid === "TS" || pid === "TR";
+  if (railId === "B") return pid === "BL" || pid === "BS" || pid === "BR";
+  if (railId === "L") return pid === "TL" || pid === "BL";
+  if (railId === "R") return pid === "TR" || pid === "BR";
+  return false;
+}
+function mirrorPt(p, rail){ return rail.axis === "y" ? [p[0], 2 * rail.line - p[1]] : [2 * rail.line - p[0], p[1]]; }
+function railIntersect(from, toward, rail){
+  const dx = toward[0] - from[0], dy = toward[1] - from[1];
+  const den = rail.axis === "y" ? dy : dx;
+  if (Math.abs(den) < 1e-8) return null;
+  const k = ((rail.axis === "y" ? rail.line - from[1] : rail.line - from[0])) / den;
+  if (k <= 0.02 || k >= 0.998) return null;
+  const hit = [from[0] + dx * k, from[1] + dy * k];
+  const along = rail.axis === "y" ? hit[0] : hit[1];
+  if (along < rail.lo + 2.3 || along > rail.hi - 2.3) return null;
+  return hit;
+}
+function sideAngleOK(into, kind){
+  if (kind !== "side") return true;
+  const a = Math.abs(Math.atan2(Math.abs(into[1]), Math.abs(into[0])) * 180 / Math.PI);
+  return a > 35;
+}
+function packShot(p, P, u, Gb, aim, C, others, T, extra){
+  const cut = Math.acos(Math.max(-1, Math.min(1, v2.dot(aim, u)))) * 180 / Math.PI;
+  const blockOB = extra.blockOB || [];
+  const blockCB = extra.blockCB || [];
+  const angOK = extra.angOK !== false;
+  const gbOK = Gb[0] >= R - 0.2 && Gb[0] <= T.L - R + 0.2 && Gb[1] >= R - 0.2 && Gb[1] <= T.W - R + 0.2;
+  const dOP = extra.dOP, dCG = extra.dCG;
+  let why = "";
+  if (extra.preWhy) why = extra.preWhy;
+  else if (cut >= 85) why = "Not makeable: cut too thin";
+  else if (!angOK) why = extra.angWhy || "Not makeable: the side pocket angle is too narrow";
+  else if (!gbOK) why = "Not makeable: the ghost-ball position is off the table";
+  else if (blockOB.length) why = "Shot not possible to this pocket: path blocked by " + blockList(blockOB);
+  else if (blockCB.length) why = "Shot not possible to this pocket: cue-ball path blocked by " + blockList(blockCB);
+  return Object.assign({ p, P, u, Gb, aim, cut, blockOB: blockOB.length, blockCB: blockCB.length, blockOBs: blockOB, blockCBs: blockCB, angOK, gbOK, why, dOP, dCG, type: extra.type || "cut" }, extra.more || {});
+}
+function evalBank(p, O, C, others, T, rail){
+  const P = aimPoint(p, T), Mi = mirrorPt(P, rail), hit = railIntersect(O, Mi, rail);
+  if (!hit) return packShot(p, P, [0, 0], O, [0, 0], C, others, T, { dOP: 0, dCG: 0, preWhy: "Not a makeable bank off the " + RAILNAME[rail.id] + " to that pocket", type: "bank", more: { hit: null, rail: rail.id, Mi } });
+  const u = v2.norm(v2.sub(hit, O)), Gb = v2.sub(O, v2.mul(u, 2 * R)), aim = v2.norm(v2.sub(Gb, C));
+  const blockOB = others.filter((b) => distSeg([b.x, b.y], O, hit)[0] < 2 * R - 0.05 || distSeg([b.x, b.y], hit, P)[0] < 2 * R - 0.05);
+  const blockCB = others.filter((b) => distSeg([b.x, b.y], C, Gb)[0] < 2 * R - 0.05);
+  return packShot(p, P, u, Gb, aim, C, others, T, { dOP: v2.len(v2.sub(hit, O)) + v2.len(v2.sub(P, hit)), dCG: v2.len(v2.sub(Gb, C)), blockOB, blockCB, angOK: sideAngleOK(v2.norm(v2.sub(P, hit)), p[2]), type: "bank", more: { hit, rail: rail.id, Mi } });
+}
+function evalKick(p, O, C, others, T, rail){
+  const P = aimPoint(p, T), u = v2.norm(v2.sub(P, O)), Gb = v2.sub(O, v2.mul(u, 2 * R));
+  const Mi = mirrorPt(Gb, rail), hit = railIntersect(C, Mi, rail);
+  if (!hit) return packShot(p, P, u, Gb, v2.norm(v2.sub(Gb, C)), C, others, T, { dOP: v2.len(v2.sub(P, O)), dCG: 0, preWhy: "Not a makeable kick off the " + RAILNAME[rail.id] + " to that pocket", type: "kick", more: { hit: null, rail: rail.id, Mi } });
+  const aim = v2.norm(v2.sub(Gb, hit));
+  const blockOB = others.filter((b) => distSeg([b.x, b.y], O, P)[0] < 2 * R - 0.05);
+  const blockCB = others.filter((b) => distSeg([b.x, b.y], C, hit)[0] < 2 * R - 0.05 || distSeg([b.x, b.y], hit, Gb)[0] < 2 * R - 0.05);
+  const dRail = v2.len(v2.sub(hit, C)), dRest = v2.len(v2.sub(Gb, hit));
+  return packShot(p, P, u, Gb, aim, C, others, T, { dOP: v2.len(v2.sub(P, O)), dCG: dRail + dRest, blockOB, blockCB, angOK: sideAngleOK(u, p[2]), type: "kick", more: { hit, rail: rail.id, Mi, dRail } });
+}
+function optionsFor(type, O, C, others, T, railId, pocketId){
+  const all = [];
+  if (type === "bank" || type === "kick"){
+    const rails = railsOf(T), ev = type === "bank" ? evalBank : evalKick;
+    const use = railId && rails[railId] ? [rails[railId]] : Object.values(rails);
+    for (const rail of use) for (const p of pockets(T)){
+      if (type === "bank" && pocketOnRail(p[0], rail.id)) continue;
+      all.push(ev(p, O, C, others, T, rail));
+    }
+  } else {
+    for (const p of pockets(T)) all.push(evalPocket(p, O, C, others, T));
+  }
+  const makeable = all.filter((x) => !x.why);
+  let wanted = null;
+  if (pocketId && pocketId !== "auto"){
+    const atPk = (railId && (type === "bank" || type === "kick")) ? all.filter((x) => x.p[0] === pocketId && x.rail === railId) : all.filter((x) => x.p[0] === pocketId);
+    wanted = bestOf(atPk.filter((x) => !x.why)) || atPk[0] || null;
+  }
+  return { all, makeable, wanted };
+}
+function leaveVel(pk, v0, k0){
+  if (!pk || !pk.Gb) return null;
+  let a;
+  if (pk.type === "kick" && pk.dRail != null){
+    const a1 = approach(v0, k0, pk.dRail);
+    if (!a1.reached || a1.v < 2) return null;
+    a = approach(a1.v * E_RAIL, a1.k, Math.max(0.01, pk.dCG - pk.dRail));
+  } else {
+    a = approach(v0, k0, pk.dCG);
+  }
+  if (!a.reached || a.v < 2) return null;
+  const n = pk.u, t0 = v2.sub(pk.aim, v2.mul(n, v2.dot(pk.aim, n))); const tl0 = v2.len(t0); const tdir = tl0 > 1e-6 ? v2.mul(t0, 1 / tl0) : [0, 0];
+  const cr = pk.cut * Math.PI / 180;
+  return { a, Va: v2.mul(tdir, a.v * Math.sin(cr)), Ws: v2.mul(pk.aim, a.k * a.v) };
+}
+// Predicted CB landing for a rolling (default) or chosen tip/speed. Independent of the player's target ring.
+function predictCB(pk, T, opt){
+  opt = opt || {};
+  const k0 = opt.k0 != null ? opt.k0 : 1, v0 = opt.v0 != null ? opt.v0 : 55, side = opt.side || 0;
+  const lv = leaveVel(pk, v0, k0); if (!lv) return null;
+  return { r: simCB(pk.Gb, lv.Va, lv.Ws, T, side), k0, v0, side, kc: lv.a.k };
+}
+
+function analyze(L, T){ // L: layout {cb, balls, ob, pocket, target, shotType, rail}
+  const out = { ok: false, msg: "", cands: [], suggest: null, pred: null };
   if (!L.cb) { out.msg = "Place the cue ball."; return out; }
   const ob = L.balls.find((b) => b.n === L.ob) || L.balls[0];
   if (!ob) { out.msg = "Add a ball, then tap it to make it the object ball."; return out; }
   const O = [ob.x, ob.y], C = L.cb;
   const others = L.balls.filter((b) => b !== ob);
-  const all = pockets(T).map((p) => evalPocket(p, O, C, others, T));
-  const makeable = all.filter((x) => !x.why);
-  const wanted = L.pocket && L.pocket !== "auto" ? all.find((x) => x.p[0] === L.pocket) : null;
-  let pk = wanted || bestOf(makeable) || bestOf(all.filter((x) => x.cut < 85 && x.angOK)) || all[0];
+  const typ = (L.shotType === "bank" || L.shotType === "kick") ? L.shotType : "cut";
+  const railId = L.rail && L.rail !== "auto" ? L.rail : null;
+  const { all, makeable, wanted } = optionsFor(typ, O, C, others, T, railId, L.pocket);
+  let pk = wanted || bestOf(makeable) || bestOf(all.filter((x) => x.cut < 85 && x.angOK && !x.why)) || bestOf(all.filter((x) => x.cut < 85 && x.angOK)) || all[0];
   out.pk = pk;
   if (pk && pk.why){
     out.msg = pk.why;
     const alt = bestOf(makeable.filter((x) => x !== pk));
-    if (alt){ out.suggest = alt; out.msg += ". Try the " + PKNAME[alt.p[0]] + "."; }
+    if (alt){ out.suggest = alt; out.msg += typ === "cut" ? (". Try the " + PKNAME[alt.p[0]] + ".") : (". Try the " + PKNAME[alt.p[0]] + " off the " + RAILNAME[alt.rail] + "."); }
     return out;
   }
-  if (!pk){ out.msg = "No makeable shot to that pocket."; return out; }
+  if (!pk){ out.msg = typ === "cut" ? "No makeable shot to that pocket." : ("No makeable " + typ + " with this setup."); return out; }
   out.ok = true;
+  out.pred = predictCB(pk, T);
   const tgt = L.target || [T.L * 0.5, T.W * 0.5];
   const sims = [];
   for (const [tl, k0] of TIPS) for (const [sl, v0] of SPEEDS) for (const side of [0, -1, 1]) {
     if (side && Math.abs(k0) > 0.9) continue;
-    const a = approach(v0, k0, pk.dCG); if (!a.reached || a.v < 2) continue;
-    const n = pk.u, t0 = v2.sub(pk.aim, v2.mul(n, v2.dot(pk.aim, n))); const tl0 = v2.len(t0); const tdir = tl0 > 1e-6 ? v2.mul(t0, 1 / tl0) : [0, 0];
-    const cr = pk.cut * Math.PI / 180, Va = v2.mul(tdir, a.v * Math.sin(cr)), Ws = v2.mul(pk.aim, a.k * a.v);
-    // object ball must reach the pocket: OB leaves at v cos(cut), slides then rolls at 5/7 of that speed
+    const lv = leaveVel(pk, v0, k0); if (!lv) continue;
+    const a = lv.a, cr = pk.cut * Math.PI / 180;
     const vOB = a.v * Math.cos(cr) * (5 / 7), dOB = vOB * vOB / (2 * MU_R * G);
     const th = throwDeg(pk.cut, a.v, a.k), miss = pk.dOP * Math.tan(th * Math.PI / 180);
-    const r = simCB(pk.Gb, Va, Ws, T, side);
-    // kisses: first ball within 2R of the CB path
+    const r = simCB(pk.Gb, lv.Va, lv.Ws, T, side);
     let kiss = null; for (let i = 1; i < r.pts.length && !kiss; i++){ for (const q of others){ if (distSeg([q.x, q.y], r.pts[i - 1], r.pts[i])[0] < 2 * R - 0.05){ kiss = [q.x, q.y]; break; } } }
     if (v2.len(v2.sub(r.end, O)) < 2 * R && pk.cut < 3 && k0 > 0) kiss = O;
     const dist = v2.len(v2.sub(r.end, tgt));
@@ -113,15 +225,20 @@ function analyze(L, T){ // L: layout {cb:[x,y], balls:[{n,x,y}], ob: n, pocket: 
 
 // ---------- UI ----------
 let T, Lay, sel = null, res = null, showIdx = 0, fsOn = false, pickOn = false, shotMsg = "", fsScrollY = 0, _redraw = null;
-const defLayout = () => ({ size: "9", cb: [25, 25], balls: [{ n: 1, x: 70, y: 18 }], ob: 1, pocket: "auto", target: [60, 34], name: "", notes: "" });
+const defLayout = () => ({ size: "9", cb: [25, 25], balls: [{ n: 1, x: 70, y: 18 }], ob: 1, pocket: "auto", target: [60, 34], shotType: "cut", rail: "auto", name: "", notes: "" });
 function load(){
   Lay = LS("pt_lab_cur", null) || defLayout();
   T = TABLES[Lay.size] || TABLES["9"];
   const savedPk = LS("pt_lab_pocket", null);
   if (savedPk === "auto" || (typeof savedPk === "string" && PKIDS.includes(savedPk))) Lay.pocket = savedPk;
   if (!Lay.pocket) Lay.pocket = "auto";
+  const types = ["cut", "bank", "kick"];
+  const savedTy = LS("pt_lab_shotType", null);
+  if (!types.includes(Lay.shotType)) Lay.shotType = types.includes(savedTy) ? savedTy : "cut";
+  const savedRail = LS("pt_lab_rail", null);
+  if (!(Lay.rail === "auto" || RAILIDS.includes(Lay.rail))) Lay.rail = (savedRail === "auto" || RAILIDS.includes(savedRail)) ? savedRail : "auto";
 }
-function persist(){ SS("pt_lab_cur", Lay); SS("pt_lab_pocket", Lay.pocket || "auto"); }
+function persist(){ SS("pt_lab_cur", Lay); SS("pt_lab_pocket", Lay.pocket || "auto"); SS("pt_lab_shotType", Lay.shotType || "cut"); SS("pt_lab_rail", Lay.rail || "auto"); }
 const LOCKSVG = (on) => on ? '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="10.5" width="14" height="10" rx="2.2" fill="currentColor"/><path d="M8 10.5V8a4 4 0 0 1 8 0v2.5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg>' : '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="10.5" width="14" height="10" rx="2.2" fill="none" stroke="currentColor" stroke-width="2"/><path d="M8 10.5V8a4 4 0 0 1 7.7-1.5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg>';
 const FSSVG = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 3H4v5M15 3h5v5M9 21H4v-5M15 21h5v-5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
 const isLocked = () => !!LS("pt_lab_lock", false);
@@ -261,8 +378,26 @@ function svgTable(esc){
   if (res && res.pk){
     const pk = res.pk, good = res.ok, aimCol = good ? "#ffd54f" : bad, obCol = good ? "#81d4fa" : bad;
     const dashAim = good ? "" : ` stroke-dasharray="1.2 .7"`;
-    s += `<line x1="${Lay.cb[0]}" y1="${Lay.cb[1]}" x2="${pk.Gb[0]}" y2="${pk.Gb[1]}" stroke="${aimCol}" stroke-width=".35"${dashAim}/><line x1="${pk.Gb[0] + pk.u[0] * 2 * R}" y1="${pk.Gb[1] + pk.u[1] * 2 * R}" x2="${pk.P[0]}" y2="${pk.P[1]}" stroke="${obCol}" stroke-width=".35" stroke-dasharray="1 .6"/><circle cx="${pk.Gb[0]}" cy="${pk.Gb[1]}" r="${R}" fill="none" stroke="${good ? "#fff" : bad}" stroke-width=".2" stroke-dasharray=".6 .4"/>`;
-    if (good) res.cands.forEach((c, i) => { if (i !== showIdx && showIdx !== -1) return; const col = ["#b9f6ca", "#ffab91", "#ce93d8", "#fff59d", "#80cbc4"][i]; s += `<polyline points="${c.r.pts.map((q) => q[0].toFixed(2) + "," + q[1].toFixed(2)).join(" ")}" fill="none" stroke="${col}" stroke-width="${i === showIdx ? .45 : .3}"/><circle cx="${c.r.end[0]}" cy="${c.r.end[1]}" r="${R}" fill="none" stroke="${col}" stroke-width=".3"/>`; });
+    const typ = pk.type || "cut";
+    if (typ === "kick" && pk.hit){
+      s += `<line id="labaim1" data-shot="kick" x1="${Lay.cb[0]}" y1="${Lay.cb[1]}" x2="${pk.hit[0]}" y2="${pk.hit[1]}" stroke="${aimCol}" stroke-width=".35"${dashAim}/><line id="labaim2" data-shot="kick" x1="${pk.hit[0]}" y1="${pk.hit[1]}" x2="${pk.Gb[0]}" y2="${pk.Gb[1]}" stroke="${aimCol}" stroke-width=".35"${dashAim}/>`;
+    } else if (Lay.cb && pk.Gb){
+      s += `<line id="labaim1" data-shot="${typ}" x1="${Lay.cb[0]}" y1="${Lay.cb[1]}" x2="${pk.Gb[0]}" y2="${pk.Gb[1]}" stroke="${aimCol}" stroke-width=".35"${dashAim}/>`;
+    }
+    if (typ === "bank" && pk.hit){
+      s += `<line id="labbank1" data-shot="bank" x1="${pk.Gb[0] + pk.u[0] * 2 * R}" y1="${pk.Gb[1] + pk.u[1] * 2 * R}" x2="${pk.hit[0]}" y2="${pk.hit[1]}" stroke="${obCol}" stroke-width=".35"/><line id="labbank2" data-shot="bank" x1="${pk.hit[0]}" y1="${pk.hit[1]}" x2="${pk.P[0]}" y2="${pk.P[1]}" stroke="${obCol}" stroke-width=".35" stroke-dasharray="1 .6"/>`;
+    } else if (pk.P && pk.u){
+      s += `<line id="labobpath" data-shot="${typ}" x1="${pk.Gb[0] + pk.u[0] * 2 * R}" y1="${pk.Gb[1] + pk.u[1] * 2 * R}" x2="${pk.P[0]}" y2="${pk.P[1]}" stroke="${obCol}" stroke-width=".35" stroke-dasharray="1 .6"/>`;
+    }
+    if (pk.hit) s += `<circle id="labrailhit" data-shot="${typ}" cx="${pk.hit[0]}" cy="${pk.hit[1]}" r=".7" fill="${aimCol}" stroke="#111" stroke-width=".12"/>`;
+    if (showGhost() && pk.Gb) s += `<circle id="labghost" cx="${pk.Gb[0]}" cy="${pk.Gb[1]}" r="${R}" fill="none" stroke="${good ? "#fff" : bad}" stroke-width=".2" stroke-dasharray=".6 .4"/>`;
+    if (!showGhost() && res.pred && res.pred.r){
+      const pr = res.pred.r, col = "#80deea";
+      s += `<polyline id="labpredpath" points="${pr.pts.map((q) => q[0].toFixed(2) + "," + q[1].toFixed(2)).join(" ")}" fill="none" stroke="${col}" stroke-width=".35" stroke-dasharray="1.1 .6"/>`;
+      const rot = land ? "" : ` transform="rotate(-90 ${pr.end[0]} ${pr.end[1] - R - 1.3})"`;
+      s += `<g id="labpred"><circle cx="${pr.end[0]}" cy="${pr.end[1]}" r="${R}" fill="#80deea22" stroke="${col}" stroke-width=".28" stroke-dasharray=".7 .45"/><text x="${pr.end[0]}" y="${pr.end[1] - R - 0.7}" font-size="1.35" text-anchor="middle" fill="${col}" font-family="system-ui" font-weight="700"${rot}>Predicted</text></g>`;
+    }
+    if (good && showGhost()) res.cands.forEach((c, i) => { if (i !== showIdx && showIdx !== -1) return; const col = ["#b9f6ca", "#ffab91", "#ce93d8", "#fff59d", "#80cbc4"][i]; s += `<polyline points="${c.r.pts.map((q) => q[0].toFixed(2) + "," + q[1].toFixed(2)).join(" ")}" fill="none" stroke="${col}" stroke-width="${i === showIdx ? .45 : .3}"/><circle cx="${c.r.end[0]}" cy="${c.r.end[1]}" r="${R}" fill="none" stroke="${col}" stroke-width=".3"/>`; });
   }
   if (Lay.target) s += `<g data-drag="tgt"><circle cx="${Lay.target[0]}" cy="${Lay.target[1]}" r="2.2" fill="#ffffff18" stroke="#fff" stroke-width=".25" stroke-dasharray=".8 .5"/><path d="M${Lay.target[0] - 1},${Lay.target[1]} h2 M${Lay.target[0]},${Lay.target[1] - 1} v2" stroke="#fff" stroke-width=".25"/></g>`;
   for (const b of Lay.balls){ const c = ballCol(b.n), st = b.n > 8; s += `<g data-drag="b${Lay.balls.indexOf(b)}"><circle cx="${b.x}" cy="${b.y}" r="${R * 1.7}" fill="#000" fill-opacity="0"/>` + (st ? `<circle cx="${b.x}" cy="${b.y}" r="${R}" fill="#fafafa"/><clipPath id="cl${b.x | 0}_${b.y | 0}"><rect x="${b.x - R}" y="${b.y - R * .55}" width="${2 * R}" height="${R * 1.1}"/></clipPath><circle cx="${b.x}" cy="${b.y}" r="${R}" fill="${c}" clip-path="url(#cl${b.x | 0}_${b.y | 0})"/>` : `<circle cx="${b.x}" cy="${b.y}" r="${R}" fill="${b.n ? c : "#9e9e9e"}"/>`) + `<circle cx="${b.x}" cy="${b.y}" r="${R}" fill="none" stroke="${sel === b ? "#ffd54f" : b.n === Lay.ob ? "#fff" : "#0006"}" stroke-width="${sel === b || b.n === Lay.ob ? .35 : .12}"/><text x="${b.x}" y="${b.y + .42}" font-size="1.15" text-anchor="middle" fill="${b.n === 8 || b.n === 2 || b.n === 4 || b.n === 7 ? "#fff" : "#000"}" font-family="system-ui" font-weight="700" ${land ? "" : `transform="rotate(-90 ${b.x} ${b.y})"`}>${b.n || "?"}</text></g>`; }
@@ -281,9 +416,17 @@ function readoutHTML(esc){
   if (!res) return "";
   if (!res.ok) return `<div class="callout labshot-msg" id="labshotmsg">${esc(res.msg)}</div>`;
   const pk = res.pk, usedOb = (Lay.balls.find((b) => b.n === Lay.ob) || Lay.balls[0] || {}).n || Lay.ob;
-  let h = `<div class="card labshot-msg"><div class="t">Shot: ball ${usedOb} to the ${PKNAME[pk.p[0]]}</div><div class="meta">Cut angle <b>${pk.cut.toFixed(1)}°</b> · ball-hit fraction ≈ ${(1 - Math.sin(pk.cut * Math.PI / 180)).toFixed(2)} · CB→ghost ${(pk.dCG / 12).toFixed(1)} ft · OB→pocket ${(pk.dOP / 12).toFixed(1)} ft</div>`;
+  const typ = pk.type || "cut";
+  const title = typ === "bank" ? `Bank: ball ${usedOb} off the ${RAILNAME[pk.rail] || "rail"} to the ${PKNAME[pk.p[0]]}`
+    : typ === "kick" ? `Kick: cue ball off the ${RAILNAME[pk.rail] || "rail"}, ball ${usedOb} to the ${PKNAME[pk.p[0]]}`
+    : `Shot: ball ${usedOb} to the ${PKNAME[pk.p[0]]}`;
+  let h = `<div class="card labshot-msg"><div class="t">${title}</div><div class="meta">${typ === "cut" ? "Cut" : "Hit"} angle <b>${pk.cut.toFixed(1)}°</b> · ball-hit fraction ≈ ${(1 - Math.sin(pk.cut * Math.PI / 180)).toFixed(2)} · CB path ${(pk.dCG / 12).toFixed(1)} ft · OB path ${(pk.dOP / 12).toFixed(1)} ft</div>`;
   if (pk.blockCB) h += `<div class="bad">⚠ Cue ball path to the ghost ball is blocked</div>`;
   if (pk.blockOB) h += `<div class="bad">⚠ Object ball path to the pocket is blocked</div>`;
+  if (!showGhost() && res.pred && res.pred.r){
+    const e = res.pred.r;
+    h += `<div class="meta">Predicted roll-to stop (natural roll, medium speed)${e.scratch ? " · ⚠ scratch" : e.rails ? ` · ${e.rails} rail${e.rails === 1 ? "" : "s"}` : ""}.</div>`;
+  }
   return h + `</div>`;
 }
 
@@ -296,6 +439,8 @@ function fsBarHTML(esc){
   h += `<button type="button" class="btn" id="labfsx">Exit full screen</button>`;
   h += `</div>`;
   if (window.TableCapture) h += `<div class="labfs-sub"><button type="button" class="btn ghost" id="labproj">📽 Project on table</button></div>`;
+  h += `<div class="labfs-sub"><button type="button" class="btn ghost" id="lghostbtn" aria-pressed="${showGhost()}">${showGhost() ? "Hide aim marker" : "Show aim marker"}</button>${SHOTTYPES.map(([k, l]) => `<button type="button" class="btn ghost ${Lay.shotType === k ? "on" : ""}" data-ltype="${k}">${l}</button>`).join("")}</div>`;
+  if ((Lay.shotType === "bank" || Lay.shotType === "kick")) h += `<div class="labfs-sub"><button type="button" class="btn ghost" id="lrailauto">Auto rail</button><span class="meta">${Lay.rail && Lay.rail !== "auto" ? "Banking off the " + RAILNAME[Lay.rail] + "." : "Rail: Auto (nearest sensible)."}</span></div>`;
   if (Lay.pocket && Lay.pocket !== "auto") h += `<div class="labfs-sub"><button type="button" class="btn ghost" id="lpkauto">Auto pocket</button><span class="meta">Aiming at the ${PKNAME[Lay.pocket]}. Tap that pocket again for Auto.</span></div>`;
   if (shotMsg) h += `<div class="meta labfs-status" id="labsnapmsg">${esc(shotMsg)}</div>`;
   return h;
@@ -353,7 +498,8 @@ window.renderLab = function($, esc, save, st){
     if (Lay.balls.length && !Lay.balls.some((b) => b.n === Lay.ob)) Lay.ob = Lay.balls[0].n;
     res = analyze(Lay, T);
     let h = `<div class="callout warnc"><b>Approximate training aid, not a physics simulator.</b> Paths use simple friction, rail-bounce and throw models from published trends (Dr. Dave TPs); real cloth, balls, cushions and your stroke will differ. Use it to plan, then test on the table.</div>`;
-    h += `<div class="row"><select id="lsize">${Object.entries(TABLES).map(([k, t]) => `<option value="${k}" ${Lay.size === k ? "selected" : ""}>${t.name}</option>`).join("")}</select><select id="lpk"><option value="auto">Pocket: Auto</option>${pockets(T).map((p) => `<option value="${p[0]}" ${Lay.pocket === p[0] ? "selected" : ""}>Pocket: ${PKNAME[p[0]]}</option>`).join("")}</select></div>`;
+    h += `<div class="row"><select id="lsize">${Object.entries(TABLES).map(([k, t]) => `<option value="${k}" ${Lay.size === k ? "selected" : ""}>${t.name}</option>`).join("")}</select><select id="ltype" aria-label="Shot type">${SHOTTYPES.map(([k, l]) => `<option value="${k}" ${Lay.shotType === k ? "selected" : ""}>Shot: ${l}</option>`).join("")}</select><select id="lpk"><option value="auto">Pocket: Auto</option>${pockets(T).map((p) => `<option value="${p[0]}" ${Lay.pocket === p[0] ? "selected" : ""}>Pocket: ${PKNAME[p[0]]}</option>`).join("")}</select>${(Lay.shotType === "bank" || Lay.shotType === "kick") ? `<select id="lrail" aria-label="Bank rail"><option value="auto" ${Lay.rail === "auto" ? "selected" : ""}>Rail: Auto</option>${RAILIDS.map((r) => `<option value="${r}" ${Lay.rail === r ? "selected" : ""}>Rail: ${RAILNAME[r]}</option>`).join("")}</select>` : ""}</div>`;
+    h += `<label class="tog big" id="lghostlab"><input type="checkbox" id="lghost" ${showGhost() ? "checked" : ""}> Show cue-ball aim marker</label><div class="meta">${showGhost() ? "The dashed white circle at the object ball is where the cue ball's center should be at contact." : "Aim marker hidden. The outlined ball labeled Predicted is where a rolling cue ball should stop — not the dashed target ring."}</div>`;
     h += `<div id="tblwrap" class="${fsOn ? "labfs-overlay" : ""}">`;
     if (fsOn) h += fsBarHTML(esc) + `<div class="labfs-stage">`;
     h += svgTable(esc);
@@ -361,7 +507,7 @@ window.renderLab = function($, esc, save, st){
     h += `</div>`;
     if (!fsOn){
       h += readoutHTML(esc);
-      h += `<div class="meta">Drag the cue ball, balls and the dashed target ring (where you want the cue ball to finish). Tap a pocket to aim at it (tap it again for Auto). Tap a ball to make it the object ball. To scroll, drag the strip beside the table, the brown rail or the felt, or lock the table with the padlock. Rotate the phone for a bigger landscape table.</div>`;
+      h += `<div class="meta">Drag the cue ball, balls and the dashed target ring (where you want the cue ball to finish). Choose Cut, Bank or Kick, then tap a pocket (and a rail, or leave Rail on Auto). Tap a ball to make it the object ball. To scroll, drag the strip beside the table, the brown rail or the felt, or lock the table with the padlock. Rotate the phone for a bigger landscape table.</div>`;
       h += pickerHTML(esc);
     }
     if (sel && sel !== "cb") h += `<div class="card"><b>Selected: ball ${sel.n || "?"}</b><div class="row"><button class="btn" id="mkob">Make object ball</button><select id="setn"><option value="">Set number…</option>${[...Array(15)].map((_, i) => `<option value="${i + 1}">${i + 1}</option>`).join("")}</select><button class="btn ghost" id="delb">Remove</button></div></div>`;
@@ -371,14 +517,20 @@ window.renderLab = function($, esc, save, st){
       h += `<div class="row"><button class="btn ghost" id="showall">${showIdx === -1 ? "Show one path" : "Show all paths"}</button></div>`;
     }
     h += `<div class="card"><div class="t">Save layout</div><input type="text" id="lname" placeholder="Name (e.g. 'Right cut, side pocket')" value="${esc(Lay.name || "")}"><textarea id="lnotes" placeholder="Notes">${esc(Lay.notes || "")}</textarea><div class="row"><button class="btn" id="lsave">Save</button><button class="btn ghost" id="lreset">Reset table</button></div></div>`;
-    h += `<details><summary>How the suggestions work</summary><div class="inner desc">Ghost ball and cut angle from simple geometry. After contact the cue ball keeps the tangent part of its speed and its spin; friction bends it from the tangent line (stun) toward the 30° roll line or back for draw (the trisect and 30° rules come out of this). Rails bounce with a restitution of ${E_RAIL}, so rebound angles come out wider than the approach (TP 6.3). Throw uses a rough 0-5° estimate (largest near half-ball and at slow speed). Candidates: 7 tip heights × 4 speeds (+ left/right english), ranked by how close the cue ball ends to your target, with penalties for scratches, kisses and short object balls. Tap a pocket on the table to aim at it, or use Pocket: Auto to pick the best makeable pocket.</div></details>`;
+    h += `<details><summary>How the suggestions work</summary><div class="inner desc">Ghost ball and cut angle from simple geometry. Bank and kick shots use mirror-image (equal-angle) aim across the chosen rail, with the table's real size; Rail: Auto picks the shortest clean one-rail path. After contact the cue ball keeps the tangent part of its speed and its spin; friction bends it from the tangent line (stun) toward the 30° roll line or back for draw (the trisect and 30° rules come out of this). The Predicted marker (when the aim marker is hidden) uses a natural rolling cue ball at medium speed, independent of your target ring, and can bounce off one or two rails. Rails bounce with a restitution of ${E_RAIL}, so rebound angles come out wider than the approach (TP 6.3). Throw uses a rough 0-5° estimate (largest near half-ball and at slow speed). Candidates: 7 tip heights × 4 speeds (+ left/right english), ranked by how close the cue ball ends to your target, with penalties for scratches, kisses and short object balls. This is a training aid, not a physics simulator: cloth, cushions, throw, and spin transfer on banks will differ on a real table.</div></details>`;
     $("#main").innerHTML = h; wire();
   };
   _redraw = draw;
   const wire = () => {
     const lsize = $("#lsize"); if (lsize) lsize.onchange = (e) => { Lay.size = e.target.value; T = TABLES[Lay.size]; const cl = (p) => [Math.min(p[0], T.L - R), Math.min(p[1], T.W - R)]; if (Lay.cb) Lay.cb = cl(Lay.cb); if (Lay.target) Lay.target = cl(Lay.target); Lay.balls.forEach((b) => { [b.x, b.y] = cl([b.x, b.y]); }); persist(); draw(); };
+    const ltype = $("#ltype"); if (ltype) ltype.onchange = (e) => { Lay.shotType = e.target.value; persist(); draw(); };
+    document.querySelectorAll("[data-ltype]").forEach((b) => b.onclick = () => { Lay.shotType = b.dataset.ltype; persist(); draw(); });
+    const lrail = $("#lrail"); if (lrail) lrail.onchange = (e) => { Lay.rail = e.target.value; persist(); draw(); };
+    const rauto = $("#lrailauto"); if (rauto) rauto.onclick = () => { Lay.rail = "auto"; persist(); draw(); };
     const lpk = $("#lpk"); if (lpk) lpk.onchange = (e) => { setPocket(e.target.value); draw(); };
     const auto = $("#lpkauto"); if (auto) auto.onclick = () => { setPocket("auto"); draw(); };
+    const gh = $("#lghost"); if (gh) gh.onchange = (e) => { setShowGhost(e.target.checked); draw(); };
+    const ghbtn = $("#lghostbtn"); if (ghbtn) ghbtn.onclick = () => { setShowGhost(!showGhost()); draw(); };
     const mk = $("#mkob"); if (mk) mk.onclick = () => { Lay.ob = sel.n; persist(); draw(); };
     const sn = $("#setn"); if (sn) sn.onchange = (e) => { const n = +e.target.value; const o = Lay.balls.find((b) => b.n === n && b !== sel); if (o) o.n = 0; sel.n = n; persist(); draw(); };
     const db = $("#delb"); if (db) db.onclick = () => { Lay.balls.splice(Lay.balls.indexOf(sel), 1); if (Lay.ob === sel.n) Lay.ob = Lay.balls[0] ? Lay.balls[0].n : null; sel = null; persist(); draw(); };
@@ -460,12 +612,12 @@ function renderSaved($, esc, save, st){
   let h = `<div class="row"><button class="btn" id="exp">Export all (JSON)</button><label class="btn ghost" style="display:inline-flex;align-items:center;justify-content:center">Import JSON<input type="file" id="imp" accept="application/json,.json" style="display:none"></label></div>`;
   h += all.length ? all.map((l, i) => `<div class="card"><div class="t">${esc(l.name)}</div><div class="meta">${new Date(l.date).toLocaleString()} · ${TABLES[l.size] ? TABLES[l.size].name : l.size} · ${l.balls.length} object ball(s)</div>${l.notes ? `<div class="desc">${esc(l.notes)}</div>` : ""}<div class="row"><button class="btn" data-ld="${i}">Load</button><button class="btn ghost" data-del="${i}">Delete</button></div></div>`).join("") : `<div class="callout">No saved layouts yet. Set up a shot on the Table tab and tap Save.</div>`;
   $("#main").innerHTML = h;
-  document.querySelectorAll("[data-ld]").forEach((b) => b.onclick = () => { const lay = all[+b.dataset.ld]; SS("pt_lab_cur", lay); SS("pt_lab_pocket", (lay && lay.pocket) || "auto"); st.labtab = "table"; window.renderLab($, esc, save, st); });
+  document.querySelectorAll("[data-ld]").forEach((b) => b.onclick = () => { const lay = all[+b.dataset.ld]; SS("pt_lab_cur", lay); SS("pt_lab_pocket", (lay && lay.pocket) || "auto"); SS("pt_lab_shotType", (lay && lay.shotType) || "cut"); SS("pt_lab_rail", (lay && lay.rail) || "auto"); st.labtab = "table"; window.renderLab($, esc, save, st); });
   document.querySelectorAll("[data-del]").forEach((b) => b.onclick = () => { if (confirm("Delete this layout?")) { all.splice(+b.dataset.del, 1); SS("pt_layouts", all); renderSaved($, esc, save, st); } });
   $("#exp").onclick = () => { const blob = new Blob([JSON.stringify({ app: "Road Warrior Shot Lab", version: 1, layouts: all }, null, 1)], { type: "application/json" }); const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = "road-warrior-shotlab-layouts.json"; document.body.appendChild(a); a.click(); a.remove(); };
   $("#imp").onchange = (e) => { const f = e.target.files[0]; if (!f) return; f.text().then((t) => { try { const j = JSON.parse(t); const arr = Array.isArray(j) ? j : j.layouts || [j]; const ok = arr.filter((l) => l && l.balls && l.size); SS("pt_layouts", ok.concat(all)); alert("Imported " + ok.length + " layout(s)."); renderSaved($, esc, save, st); } catch (err) { alert("That file isn't a Shot Lab JSON export."); } }); };
 }
-window.ShotLab = { analyze, TABLES, pockets, R, approach, simCB, evalPocket, PKNAME, captureTable };
+window.ShotLab = { analyze, predictCB, TABLES, pockets, R, approach, simCB, evalPocket, evalBank, evalKick, PKNAME, RAILNAME, RAILIDS, showGhost, setShowGhost, captureTable };
 })();
 // ---------- Photo to layout (all on-device; nothing is uploaded) ----------
 (function(){

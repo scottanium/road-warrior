@@ -153,11 +153,15 @@ function closeProjector(){ if (!PJ.on) return; PJ.on = false; const ov = documen
 function nudge(dx, dy){ const cal = projCal(), W = innerWidth, H = innerHeight; const idx = PJ.sel === 4 ? [0, 1, 2, 3] : [PJ.sel]; idx.forEach((i) => { cal.c[i] = [cal.c[i][0] + dx / W, cal.c[i][1] + dy / H]; }); SS("pt_tc_projcal", cal); pjDraw(); }
 function pjBar(){ const b = document.getElementById("tcpbar"), sh = document.getElementById("tcpshow"); if (!b) return; b.hidden = !PJ.bar; sh.hidden = PJ.bar;
   const ch = (k, l, on) => `<button type="button" class="tcpb${on ? " on" : ""}" data-pj="${k}">${l}</button>`;
+  const S = window.ShotLab, ghostOn = S ? S.showGhost() : true, typ = (PJ.lay && PJ.lay.shotType) || "cut";
   let h = `<div class="tcprow">${ch("x", "Exit", false)}${PJ.lay ? ch("both", "Both", PJ.show === "both") + ch("balls", "Balls", PJ.show === "balls") + ch("lines", "Lines", PJ.show === "lines") : ""}${ch("grid", "Test grid", PJ.grid)}${ch("cal", "Calibrate", PJ.cal)}${ch("hide", "Hide controls", false)}</div>`;
+  if (PJ.lay) h += `<div class="tcprow">${ch("ghost", ghostOn ? "Hide aim marker" : "Show aim marker", ghostOn)}${[["cut","Cut"],["bank","Bank"],["kick","Kick"]].map(([k, l]) => ch("type-" + k, l, typ === k)).join("")}</div>`;
   if (PJ.cal) h += `<div class="tcprow">${[1, 2, 3, 4].map((n) => ch("c" + (n - 1), "Corner " + n, PJ.sel === n - 1)).join("")}${ch("c4", "All", PJ.sel === 4)}${ch("l", "◀", false)}${ch("u", "▲", false)}${ch("d", "▼", false)}${ch("r", "▶", false)}${ch("fine", PJ.fine ? "Step 0.5 px" : "Step 5 px", false)}${ch("reset", "Reset", false)}</div><div class="tcpnote">Drag each numbered handle onto its table corner (where the cushion noses meet). Corner 1 is the same corner you tapped as 1 in the camera setup. Use the arrows for fine steps, then check with the test grid.</div>`;
   b.innerHTML = h;
   b.querySelectorAll("[data-pj]").forEach((x) => x.onclick = (e) => { e.stopPropagation(); const k = x.dataset.pj, st = PJ.fine ? 0.5 : 5;
     if (k === "x") return closeProjector(); if (k === "both" || k === "balls" || k === "lines") PJ.show = k; else if (k === "grid") PJ.grid = !PJ.grid; else if (k === "cal") PJ.cal = !PJ.cal; else if (k === "hide") PJ.bar = false;
+    else if (k === "ghost"){ if (window.ShotLab) window.ShotLab.setShowGhost(!window.ShotLab.showGhost()); }
+    else if (k.slice(0, 5) === "type-" && PJ.lay){ PJ.lay.shotType = k.slice(5); try { localStorage.setItem("pt_lab_shotType", JSON.stringify(PJ.lay.shotType)); } catch (er) {} }
     else if (k[0] === "c" && k.length === 2) PJ.sel = +k[1]; else if (k === "l") return nudge(-st, 0); else if (k === "r") return nudge(st, 0); else if (k === "u") return nudge(0, -st); else if (k === "d") return nudge(0, st);
     else if (k === "fine") PJ.fine = !PJ.fine; else if (k === "reset"){ if (!confirm("Reset the projector corners?")) return; localStorage.removeItem("pt_tc_projcal"); }
     pjBar(); pjDraw(); }); }
@@ -174,13 +178,37 @@ function pjDraw(){ const cv = document.getElementById("tcpc"); if (!cv) return; 
   if (lay && PJ.show !== "lines") (lay.balls || []).forEach((b) => { const c = projCol(b.n), circ = []; for (let k = 0; k < 48; k++){ const a = k / 48 * Math.PI * 2; circ.push([b.x + R * Math.cos(a), b.y + R * Math.sin(a)]); }
     x.lineWidth = 2.5; x.strokeStyle = c; poly(circ, true); x.lineWidth = 1.5; poly([[b.x - 0.45, b.y], [b.x + 0.45, b.y]]); poly([[b.x, b.y - 0.45], [b.x, b.y + 0.45]]);
     const sc = scale(b.x, b.y), q = m(b.x + R + 0.9, b.y - R - 0.4); x.fillStyle = c; x.font = `700 ${Math.max(10, Math.round(sc * 1.4))}px system-ui,sans-serif`; x.textAlign = "center"; x.textBaseline = "middle"; x.fillText(b.n === 0 ? "CB" : String(b.n), q[0], q[1]); });
+  if (lay && window.ShotLab && PJ.show !== "balls") pjShotLines(x, m, poly, scale, lay, T);
   if (PJ.cal) cal.c.forEach((p, i) => { const px = p[0] * W, py = p[1] * Hh, on = PJ.sel === i || PJ.sel === 4; x.strokeStyle = on ? "#ffea00" : "#ff40ff"; x.lineWidth = 1.5; x.beginPath(); x.arc(px, py, 22, 0, 7); x.moveTo(px - 30, py); x.lineTo(px + 30, py); x.moveTo(px, py - 30); x.lineTo(px, py + 30); x.stroke(); x.fillStyle = x.strokeStyle; x.font = "700 16px system-ui,sans-serif"; x.textAlign = "center"; x.textBaseline = "middle"; x.fillText(String(i + 1), px + 30, py - 30); }); }
+
+function pjShotLines(x, m, poly, scale, lay, T){
+  const S = window.ShotLab; if (!S) return;
+  const L = toShotLab(lay); if (!L.cb || !L.balls.length) return;
+  const res = S.analyze(L, T); if (!res || !res.pk) return;
+  const pk = res.pk, good = res.ok, aimCol = good ? "#ffd54f" : "#ff6b6b", obCol = good ? "#81d4fa" : "#ff6b6b";
+  x.lineJoin = "round"; x.lineCap = "round"; x.lineWidth = 3;
+  const line = (a, b, col, dash) => { x.strokeStyle = col; x.setLineDash(dash || []); poly([a, b]); x.setLineDash([]); };
+  if (pk.type === "kick" && pk.hit && L.cb){ line(L.cb, pk.hit, aimCol); line(pk.hit, pk.Gb, aimCol); }
+  else if (L.cb && pk.Gb) line(L.cb, pk.Gb, aimCol);
+  if (pk.type === "bank" && pk.hit){ const o0 = [pk.Gb[0] + pk.u[0] * 2 * R, pk.Gb[1] + pk.u[1] * 2 * R]; line(o0, pk.hit, obCol); line(pk.hit, pk.P, obCol, [10, 8]); }
+  else if (pk.P && pk.u) line([pk.Gb[0] + pk.u[0] * 2 * R, pk.Gb[1] + pk.u[1] * 2 * R], pk.P, obCol, [10, 8]);
+  if (pk.hit){ const q = m(pk.hit[0], pk.hit[1]), sc = scale(pk.hit[0], pk.hit[1]); x.fillStyle = aimCol; x.beginPath(); x.arc(q[0], q[1], Math.max(3, sc * 0.7), 0, 7); x.fill(); }
+  if (S.showGhost() && pk.Gb){ const circ = []; for (let k = 0; k < 48; k++){ const a = k / 48 * Math.PI * 2; circ.push([pk.Gb[0] + R * Math.cos(a), pk.Gb[1] + R * Math.sin(a)]); } x.strokeStyle = good ? "#ffffff" : "#ff6b6b"; x.lineWidth = 2; x.setLineDash([6, 5]); poly(circ, true); x.setLineDash([]); }
+  else if (res.pred && res.pred.r){
+    const pr = res.pred.r, col = "#80deea";
+    x.strokeStyle = col; x.lineWidth = 3; x.setLineDash([10, 7]); poly(pr.pts); x.setLineDash([]);
+    const circ = []; for (let k = 0; k < 48; k++){ const a = k / 48 * Math.PI * 2; circ.push([pr.end[0] + R * Math.cos(a), pr.end[1] + R * Math.sin(a)]); }
+    x.strokeStyle = col; x.lineWidth = 2.5; poly(circ, true);
+    const sc = scale(pr.end[0], pr.end[1]), q = m(pr.end[0], pr.end[1] - R - 1.2);
+    x.fillStyle = col; x.font = `700 ${Math.max(11, Math.round(sc * 1.5))}px system-ui,sans-serif`; x.textAlign = "center"; x.textBaseline = "middle"; x.fillText("Predicted", q[0], q[1]);
+  }
+}
 
 // ---------- conversions ----------
 function toShotLab(lay){ const cue = lay.balls.find((b) => b.n === 0), used = new Set(), balls = []; lay.balls.forEach((b) => { if (b.n > 0 && !used.has(b.n)){ used.add(b.n); balls.push({ n: b.n, x: b.x, y: b.y }); } });
   let nx = 1; lay.balls.forEach((b) => { if (b.n !== 0 && !balls.some((q) => q.x === b.x && q.y === b.y)){ while (used.has(nx)) nx++; used.add(nx); balls.push({ n: nx, x: b.x, y: b.y }); } });
-  const T = dims(lay.size); return { size: lay.size, cb: cue ? [cue.x, cue.y] : [T.L / 4, T.W / 2], balls, ob: balls[0] ? balls[0].n : null, pocket: "auto", target: [T.L * 0.6, T.W * 0.68], name: lay.name || "", notes: "From Table Capture" }; }
-function fromShotLab(Lay){ const b = (Lay.balls || []).map((q) => ({ n: q.n, x: q.x, y: q.y })); if (Lay.cb) b.unshift({ n: 0, x: Lay.cb[0], y: Lay.cb[1] }); return { size: Lay.size, balls: b, paths: [], name: Lay.name || "Shot Lab layout" }; }
+  const T = dims(lay.size); return { size: lay.size, cb: cue ? [cue.x, cue.y] : (lay.cb || [T.L / 4, T.W / 2]), balls, ob: lay.ob || (balls[0] ? balls[0].n : null), pocket: lay.pocket || "auto", target: lay.target || [T.L * 0.6, T.W * 0.68], shotType: lay.shotType || "cut", rail: lay.rail || "auto", name: lay.name || "", notes: lay.notes || "From Table Capture" }; }
+function fromShotLab(Lay){ const b = (Lay.balls || []).map((q) => ({ n: q.n, x: q.x, y: q.y })); if (Lay.cb) b.unshift({ n: 0, x: Lay.cb[0], y: Lay.cb[1] }); return { size: Lay.size, balls: b, paths: Lay.paths || [], name: Lay.name || "Shot Lab layout", cb: Lay.cb, ob: Lay.ob, pocket: Lay.pocket || "auto", target: Lay.target, shotType: Lay.shotType || "cut", rail: Lay.rail || "auto" }; }
 
 // ---------- UI ----------
 let $, esc, ctx = null;
@@ -238,7 +266,19 @@ function detectNow(){ const s = curSetup(); if (!s) return alert("Save a camera 
   const td = topDown(f, s, 8); const r = findBalls(td.px, td.w, td.h, 8); guessNumbers(r.balls); const cam = camOf(s), T = dims(s.size);
   C.under = tdCanvas(td).toDataURL("image/jpeg", 0.7);
   const balls = r.balls.map((b) => { const p = parallax([b.x, b.y], cam); return { n: b.n, x: +Math.max(R, Math.min(T.L - R, p[0])).toFixed(2), y: +Math.max(R, Math.min(T.W - R, p[1])).toFixed(2) }; });
-  C.lay = { id: null, name: "", size: s.size, setup: s.id, balls, paths: (C.lay && C.lay.size === s.size && C.lay.paths) || [] }; C.sel = -1; }
+  C.lay = { id: null, name: "", size: s.size, setup: s.id, balls, paths: (C.lay && C.lay.size === s.size && C.lay.paths) || [], shotType: (C.lay && C.lay.shotType) || "cut", rail: (C.lay && C.lay.rail) || "auto", pocket: (C.lay && C.lay.pocket) || "auto" }; C.sel = -1; }
+const TC_RAILNAME = { T: "top long rail", B: "bottom long rail", L: "left short rail", R: "right short rail" };
+function shotTypeRow(lay){
+  lay.shotType = lay.shotType || "cut";
+  lay.rail = lay.rail || "auto";
+  let h = `<div class="row"><select id="tctype" aria-label="Shot type">${[["cut","Shot: Cut"],["bank","Shot: Bank"],["kick","Shot: Kick"]].map(([v, l]) => `<option value="${v}" ${lay.shotType === v ? "selected" : ""}>${l}</option>`).join("")}</select>`;
+  if (lay.shotType !== "cut") h += `<select id="tcrail" aria-label="Bank rail"><option value="auto" ${lay.rail === "auto" ? "selected" : ""}>Rail: Auto</option>${["T","B","L","R"].map((r) => `<option value="${r}" ${lay.rail === r ? "selected" : ""}>Rail: ${TC_RAILNAME[r]}</option>`).join("")}</select>`;
+  return h + `</div>`;
+}
+function wireShotType(lay, redraw){
+  const t = $("#tctype"); if (t) t.onchange = (e) => { lay.shotType = e.target.value; redraw(); };
+  const r = $("#tcrail"); if (r) r.onchange = (e) => { lay.rail = e.target.value; redraw(); };
+}
 function rLayout(){ const s = curSetup(); let h = `<div class="callout"><b>Step 2: capture the layout.</b> With the balls set and nobody over the table, grab a frame. Balls are found automatically; drag any that are off, tap one to change its number or delete it.</div>`;
   h += srcRow() + `<div class="row"><button class="btn" id="tcdet">${C.lay ? "Re-detect from camera" : "Grab frame and find balls"}</button>${C.lay ? `<label class="tog" style="flex:0 0 auto"><input type="checkbox" id="tcund" ${C.showUnder !== false ? "checked" : ""}> Photo under</label>` : ""}</div>`;
   if (!s) h += `<div class="callout warnc">Save a camera setup first (step 1).</div>`;
@@ -247,8 +287,9 @@ function rLayout(){ const s = curSetup(); let h = `<div class="callout"><b>Step 
 function editor(){ const w = $("#tced"); if (!w || !C.lay) return; const lay = C.lay, b = lay.balls[C.sel];
   let h = diagram(lay, { edit: true, under: C.showUnder !== false }) + `<div class="meta">${lay.balls.length} ball(s) · ${dims(lay.size).name}${C.sel >= 0 && b ? ` · selected ball at ${b.x.toFixed(1)}, ${b.y.toFixed(1)} in from corner 1` : ""}</div>`;
   h += `<div class="row">${b ? `<select id="tcbn">${Array.from({ length: 16 }, (_, n) => `<option value="${n}" ${n === b.n ? "selected" : ""}>${n === 0 ? "Cue ball" : n + " ball"}</option>`).join("")}</select><button class="btn ghost" id="tcbdel">Delete ball</button>` : ""}<button class="btn ghost" id="tcbadd">Add ball</button></div>`;
+  h += shotTypeRow(lay);
   h += `<div class="row"><input type="text" id="tclname" placeholder="Layout name, e.g. 7-ball I missed Tuesday" value="${esc(lay.name || "")}"><button class="btn" id="tclsave">Save layout</button></div><div class="row"><button class="btn ghost" id="tctolab">Open in Shot Lab</button><button class="btn ghost" id="tcproj1">📽 Project on table</button><button class="btn ghost" id="tctoshot">Record a shot →</button></div><div class="meta" id="tcmsg"></div>`;
-  w.innerHTML = h; wireEditor(w); }
+  w.innerHTML = h; wireEditor(w); wireShotType(lay, editor); }
 function wireEditor(w){ const lay = C.lay, svg = w.querySelector("svg"); let drag = null;
   svg.addEventListener("pointerdown", (e) => { const g = e.target.closest("[data-bi]"); if (!g) return; const i = +g.dataset.bi; C.sel = i; drag = { i, g, p0: svgPt(svg, e), b0: [lay.balls[i].x, lay.balls[i].y], moved: false }; try { svg.setPointerCapture(e.pointerId); } catch (er) {} e.preventDefault(); });
   svg.addEventListener("pointermove", (e) => { if (!drag) return; const p = svgPt(svg, e), T = dims(lay.size), b = lay.balls[drag.i]; b.x = +Math.max(R, Math.min(T.L - R, drag.b0[0] + p[0] - drag.p0[0])).toFixed(2); b.y = +Math.max(R, Math.min(T.W - R, drag.b0[1] + p[1] - drag.p0[1])).toFixed(2); drag.g.setAttribute("transform", `translate(${b.x},${b.y})`); drag.moved = true; });
@@ -259,7 +300,7 @@ function wireEditor(w){ const lay = C.lay, svg = w.querySelector("svg"); let dra
   $("#tclsave").onclick = () => { lay.name = $("#tclname").value.trim() || ("Capture " + new Date().toLocaleString()); saveLay(lay); $("#tcmsg").textContent = "Saved ✓ (see Saved)."; };
   $("#tctolab").onclick = () => sendToLab(lay); $("#tcproj1").onclick = () => openProjector(lay); $("#tctoshot").onclick = () => { C.sub = "shot"; render(); }; }
 function saveLay(lay){ const all = LS("pt_tc_layouts", []); lay.date = new Date().toISOString(); if (!lay.id) lay.id = uid(); const rec = JSON.parse(JSON.stringify(lay)); const i = all.findIndex((x) => x.id === lay.id); if (i >= 0) all[i] = rec; else all.unshift(rec); return SS("pt_tc_layouts", all); }
-function sendToLab(lay){ const sl = toShotLab(lay); SS("pt_lab_cur", sl); SS("pt_lab_pocket", "auto"); stop(); if (ctx){ ctx.st.labtab = "table"; ctx.save(); window.renderLab($, esc, ctx.save, ctx.st); } }
+function sendToLab(lay){ const sl = toShotLab(lay); SS("pt_lab_cur", sl); SS("pt_lab_pocket", sl.pocket || "auto"); SS("pt_lab_shotType", sl.shotType || "cut"); SS("pt_lab_rail", sl.rail || "auto"); stop(); if (ctx){ ctx.st.labtab = "table"; ctx.save(); window.renderLab($, esc, ctx.save, ctx.st); } }
 // ---------- shot tracking ----------
 function rShot(){ const s = curSetup(); let h = `<div class="callout"><b>Step 3: record a shot.</b> Live: tap Start tracking, shoot, and it stops by itself about 1.5 s after the balls stop. Video file: scrub to just before the stroke, then tap Start; the clip plays at ¼ speed so every frame is measured.</div>`;
   h += srcRow() + `<div class="row"><button class="btn" id="tctrk">${C.running ? "Stop tracking" : "Start tracking"}</button></div><div class="meta" id="tcts"></div><div id="tcpe"></div>`;
@@ -274,7 +315,7 @@ function startTrack(){ const s = curSetup(), v = C.video; if (!s) return alert("
   const px0 = frame(), cloth = clothOf(px0, Wp.w, Wp.h), conv = (bs) => bs.map((b) => { const p = parallax([b.x, b.y], cam); return { x: p[0], y: p[1], white: b.white, bright: b.bright, col: b.col, dark: b.dark, hue: b.hue, val: b.val, grp: b.grp }; });
   const init = conv(findBalls(px0, Wp.w, Wp.h, ppi, { cloth }).balls); if (!init.length) return alert("No balls found in the first frame. Check the lighting and calibration.");
   if (C.lay && C.lay.size === s.size && C.lay.balls.length){ init.forEach((b) => { let best = null, bd = 3; C.lay.balls.forEach((q) => { const d = Math.hypot(q.x - b.x, q.y - b.y); if (d < bd){ bd = d; best = q; } }); b.n = best ? best.n : -1; }); const used = new Set(init.map((b) => b.n)); let nx = 1; init.forEach((b) => { if (b.n < 0){ while (used.has(nx)) nx++; used.add(nx); b.n = nx; } }); }
-  else { guessNumbers(init); C.lay = { id: null, name: "", size: s.size, setup: s.id, balls: init.map((b) => ({ n: b.n, x: +b.x.toFixed(2), y: +b.y.toFixed(2) })), paths: [] }; }
+  else { guessNumbers(init); C.lay = { id: null, name: "", size: s.size, setup: s.id, balls: init.map((b) => ({ n: b.n, x: +b.x.toFixed(2), y: +b.y.toFixed(2) })), paths: [], shotType: "cut", rail: "auto" }; }
   const tk = new Tracker(init); C.trk = tk; C.running = true; let n = 0, t0 = performance.now(), m0 = file ? v.currentTime : 0, done = false;
   const stEl = () => $("#tcts");
   const tick = (now, meta) => { if (!C.running || done) return; const t = file ? ((meta && meta.mediaTime) || v.currentTime) - m0 : (performance.now() - t0) / 1000;
@@ -290,8 +331,10 @@ function pathEditor(){ const w = $("#tcpe"); if (!w || !C.lay) return; const lay
   let h = diagram(lay, { ptEdit: C.ptEdit }) + `<label class="tog"><input type="checkbox" id="tcpted" ${C.ptEdit ? "checked" : ""}> Tap points to delete them</label>`;
   (lay.paths || []).forEach((p, i) => { const n = p.pts.length, a = p.a || 0, b = p.b == null ? n - 1 : p.b; h += `<div class="card"><div class="t"><span style="color:${PATHC[i % PATHC.length]}">━━</span> ${p.n === 0 ? "Cue ball" : p.n + " ball"} · ${b - a + 1} points</div><label>Start<input type="range" min="0" max="${n - 1}" value="${a}" data-pa="${i}"></label><label>End<input type="range" min="0" max="${n - 1}" value="${b}" data-pb="${i}"></label><div class="row"><button class="btn ghost" data-pcl="${i}">Auto-clean</button><button class="btn ghost" data-pdel="${i}">Delete path</button></div></div>`; });
   if (!(lay.paths || []).length) h += `<div class="meta">No shot paths yet.</div>`;
+  h += shotTypeRow(lay);
   h += `<div class="row"><input type="text" id="tclname" placeholder="Layout name" value="${esc(lay.name || "")}"><button class="btn" id="tclsave">Save layout + paths</button></div><div class="row"><button class="btn ghost" id="tcproj1">📽 Project on table</button><button class="btn ghost" id="tctolab">Open in Shot Lab</button></div><div class="meta" id="tcmsg"></div>`;
   w.innerHTML = h;
+  wireShotType(lay, pathEditor);
   $("#tcpted").onchange = (e) => { C.ptEdit = e.target.checked; pathEditor(); };
   w.querySelectorAll("[data-pp]").forEach((c) => c.addEventListener("click", () => { const [pi, k] = c.dataset.pp.split(":").map(Number), p = lay.paths[pi]; p.pts.splice(k, 1); p.a = Math.min(p.a || 0, p.pts.length - 1); if (p.b != null) p.b = Math.min(p.b - (k <= p.b ? 1 : 0), p.pts.length - 1); pathEditor(); }));
   w.querySelectorAll("[data-pa]").forEach((r) => r.oninput = () => { const p = lay.paths[+r.dataset.pa]; p.a = Math.min(+r.value, p.b == null ? p.pts.length - 1 : p.b); pathEditor(); });
@@ -310,7 +353,7 @@ function rSaved(){ const all = LS("pt_tc_layouts", []);
   document.querySelectorAll("[data-sd]").forEach((b) => b.onclick = () => { if (confirm("Delete this capture?")){ all.splice(+b.dataset.sd, 1); SS("pt_tc_layouts", all); rSaved(); } });
   const ex = $("#tcexp"); if (ex) ex.onclick = () => { const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([JSON.stringify({ app: "Road Warrior Table Capture", version: 1, setups: setups(), layouts: all }, null, 1)], { type: "application/json" })); a.download = "road-warrior-table-capture.json"; document.body.appendChild(a); a.click(); a.remove(); }; }
 function rProj(){ const has = !!LS("pt_tc_projcal", null);
-  let h = `<div class="callout"><b>Projector mode.</b> Connect the device to the projector (mirrored), mount the projector overhead about a foot outside the long rail at the side pocket pointing straight down, then open projector mode. The page goes pure black and draws only balls, centers and shot lines.</div>`;
+  let h = `<div class="callout"><b>Projector mode.</b> Connect the device to the projector (mirrored), mount the projector overhead about a foot outside the long rail at the side pocket pointing straight down, then open projector mode. The page goes pure black and draws only balls, centers and shot lines. Use Hide aim marker to drop the contact circle and show a Predicted roll-to stop instead, and Cut / Bank / Kick to change how the shot line is drawn.</div>`;
   h += `<div class="row"><button class="btn" id="tcpgrid">${has ? "Open with test grid" : "Calibrate projector"}</button>${C.lay ? `<button class="btn ghost" id="tcpcur">Project current layout</button>` : ""}</div>`;
   h += `<div class="meta">${has ? "Projector corners are saved. Re-check with the test grid whenever the projector or table moves." : "Not calibrated yet: drag the 4 handles onto the table corners."}</div><div class="meta">In projector mode: tap the screen to show or hide the controls; Esc or Exit leaves. On a keyboard, arrow keys nudge the selected corner (Shift for 5 px).</div>`;
   body(h); $("#tcpgrid").onclick = () => openProjector(null); const c = $("#tcpcur"); if (c) c.onclick = () => openProjector(C.lay); }
