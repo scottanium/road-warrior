@@ -97,6 +97,11 @@ let AUI = null, TUI = null;
 const aui = () => AUI || (AUI = window.Adaptive.ui($, esc, url, vbtns, save, st, () => render()));
 const tui = () => TUI || (TUI = window.Tour.ui($, esc, save, st, () => render()));
 window.PT_tui = tui; window.PT_curView = () => st.view;
+window.PT_startTests = (ids) => { st.view = "tests"; st.dayTests = ids || []; st.tarea = "all"; save(); render(); };
+window.PT_useTodayAdaptive = () => {
+  const d = L("pt_dayprompt", {});
+  return d && d.date === today() && d.useAdaptive;
+};
 function dayHTML(d, dateKey){
   const done = dateKey ? L("pt_done_" + dateKey, {}) : null;
   return `<div class="card"><div class="t">${esc(d.day)}: ${esc(d.theme)}</div>${d.blocks.map((b, i) => `<div class="block">${done?`<input type="checkbox" data-i="${i}" ${done[i]?"checked":""}>`:""}<div><div class="t">${esc(b[0])}</div><div class="muted">${esc(b[1])}</div>${vbtns((STEPV[d.day] || [])[i])}</div></div>`).join("")}</div>`;
@@ -108,20 +113,26 @@ function renderToday(){
   $("#headx").innerHTML = "";
   let h = "";
   const P = window.Adaptive.prof();
-  if (P.mode === "adaptive") {
+  const ratingHTML = (window.Adaptive && Adaptive.ratingCardHTML) ? Adaptive.ratingCardHTML(esc, { id: "today", saveLabel: "Save rating" }) : "";
+  const wireRating = () => { const rc = document.querySelector("#main .rating-card"); if (rc && window.Adaptive && Adaptive.wireRatingCard) Adaptive.wireRatingCard(rc, () => render()); };
+  if (P.mode === "adaptive" || window.PT_useTodayAdaptive()) {
     const ta = aui().todayAdaptive();
-    h += `<div class="callout">Showing your <b>adaptive plan</b>. <a href="#" id="goap">See the week and why</a> · switch back in Profile.</div>`;
+    h += ratingHTML;
+    const dayNote = P.mode === "adaptive" ? "Showing your <b>adaptive plan</b>." : "Showing a general session for your estimated level (your Profile still has the built plan).";
+    h += `<div class="callout">${dayNote} <a href="#" id="goap">See the week and why</a>${P.mode === "adaptive" ? " · switch back in Profile." : " · switch plans in Profile."}</div>`;
     const TK = ta.day ? "today:" + today() + ":a" : null;
     if (ta.day && window.StepTimer) h += window.StepTimer.panel(TK, "Today's plan (" + ta.day.day + ")", "today", ta.day.blocks.map((b) => ({ t: b.t, sec: b.min ? b.min * 60 : null })));
     h += ta.day ? ta.html(ta.day) : `<div class="callout">Rest day in your adaptive plan (${ta.pl.days.map((x) => x.day).join(", ")}). Try the warm-up or a fun game.</div>`;
     h += `<div class="row"><button class="btn ghost" id="gowarm">Pre-match warm-up</button><button class="btn ghost" id="gotests">Log a test score</button></div>`;
     $("#main").innerHTML = h;
+    wireRating();
     if (TK && window.StepTimer) { document.querySelectorAll("#main .block").forEach((el, i) => window.StepTimer.mark(el, TK, i)); window.StepTimer.refresh(); }
     $("#goap").onclick = (e) => { e.preventDefault(); st.view = "plan"; st.pmode = "adaptive"; save(); render(); };
     $("#gowarm").onclick = () => { st.view = "warm"; save(); render(); };
     $("#gotests").onclick = () => { st.view = "tests"; save(); render(); };
     return;
   }
+  h += ratingHTML;
   if (d) {
     const TK = "today:" + today() + ":b";
     if (window.StepTimer) h += window.StepTimer.panel(TK, "Today's plan (" + d.day + ")", "today", d.blocks.map((b) => window.StepTimer.parseRange(b[0])));
@@ -140,6 +151,7 @@ function renderToday(){
   }
   h += `<h3>Back-friendly reminders</h3>` + BACK.map((b, i) => `<div class="card"><div>${esc(b.split("|")[0])}</div>${vbtns(BACKNV[i])}</div>`).join("");
   $("#main").innerHTML = h;
+  wireRating();
   document.querySelectorAll(".block input").forEach((c) => c.onchange = () => { const k = "pt_done_" + today(); const v = L(k, {}); v[c.dataset.i] = c.checked; S(k, v); });
 }
 
@@ -279,6 +291,7 @@ function render(){
   document.body.classList.toggle("labmode", st.view === "lab");
   window.scrollTo(0, 0);
   if (window.Money) window.Money.fab();
+  if (window.PT_DayPrompt && st.view === "today") setTimeout(() => PT_DayPrompt.maybeShow(), 0);
 }
 document.querySelectorAll("#tabs button").forEach((b) => b.onclick = () => { st.view = b.dataset.v; save(); render(); });
 render();

@@ -16,13 +16,13 @@
     },
     {
       title: "Today's plan and step timers",
-      body: "Today shows your practice plan for this day. Tick steps as you finish them. When a step has a timer, you'll be alerted when it's time to move on — keep the app open on screen for the most reliable alert.",
+      body: "Today shows your practice plan for this day. When you start a training day, you'll be asked if you want to test first so the workout can be built around you. You can also enter your Fargo or estimated level in the Your rating card — or look it up on FargoRate. Tick steps as you finish them. When a step has a timer, you'll be alerted when it's time to move on — keep the app open on screen for the most reliable alert.",
       view: "today",
       target: () => $("[data-stpanel]") || $("#main .card") || $("#title")
     },
     {
       title: "The weekly Plan",
-      body: "Plan has the full week: a built 3-hour plan and an Adaptive plan based on your profile. Open Profile from here or from More to set your level, time, and games.",
+      body: "Plan has the full week: a built 3-hour plan and an Adaptive plan based on your profile. Open Profile from here or from More to set your Fargo or estimated level, time, and games. If you don't have a Fargo yet, there is a Look up my Fargo link that opens FargoRate's official player search.",
       view: "plan",
       target: () => $("#headx") || $("#title")
     },
@@ -34,7 +34,7 @@
     },
     {
       title: "Tests",
-      body: "Tests are skill checks you can score and save. Those results can help shape an adaptive plan, which you turn on in Profile.",
+      body: "Tests are skill checks you can score and save. Those results shape your adaptive plan, so the app can spend more time on your weak areas. If you skip the tests, the plan is still built from your Fargo or estimated level.",
       view: "tests",
       target: () => $("#headx") || $("#main .card") || $("#title")
     },
@@ -99,6 +99,7 @@
     removeRoot();
     if (restore && window.PT_goView && window.PT_curView && PT_curView() !== restore) PT_goView(restore);
     clearHash();
+    if (window.PT_DayPrompt) setTimeout(() => PT_DayPrompt.maybeShow(), 80);
   }
 
   function onKey(e) {
@@ -145,6 +146,7 @@
     if (welcome) { welcome.remove(); welcome = null; }
     document.removeEventListener("keydown", onKey, true);
     clearHash();
+    if (window.PT_DayPrompt) setTimeout(() => PT_DayPrompt.maybeShow(), 80);
   }
 
   function start(opts) {

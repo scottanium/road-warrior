@@ -261,6 +261,21 @@ body.labfs-on #tblwrap.labfs-overlay>.labpick{margin:0;border-radius:12px 12px 0
 body.tcproj-on #pttour,body.tcproj-on #pttour-welcome,body.labfs-on #pttour,body.labfs-on #pttour-welcome{display:none!important}
 :fullscreen #pttour,:fullscreen #pttour-welcome,:-webkit-full-screen #pttour,:-webkit-full-screen #pttour-welcome{display:none!important}
 @media (prefers-reduced-motion: reduce){#pttour-spot,.pttour-card{transition:none}}
+
+/* Training-day prompt + rating card */
+#ptday{position:fixed;inset:0;z-index:36;pointer-events:auto}
+#ptday .ptday-scrim{position:absolute;inset:0;background:rgba(0,0,0,.62)}
+#ptday .ptday-card{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);width:calc(100% - 32px);max-width:420px;max-height:calc(100dvh - 24px);overflow:auto;-webkit-overflow-scrolling:touch;background:var(--card);color:var(--text);border:1px solid color-mix(in srgb,var(--accent) 35%,var(--line));border-radius:14px;padding:16px 14px 14px;box-shadow:0 10px 28px rgba(0,0,0,.45);font-size:15px;line-height:1.4}
+#ptday .ptday-card h2{font-size:18px;margin:0 0 8px}
+#ptday .ptday-card p{margin:0 0 10px}
+#ptday .ptday-acts{display:flex;flex-direction:column;gap:8px;margin-top:8px}
+#ptday .ptday-acts .btn{width:100%}
+#ptday .ptday-quiet{background:transparent;border:0;color:var(--sub);font:inherit;font-size:13px;text-decoration:underline;padding:8px;min-height:40px;cursor:pointer}
+body.tcproj-on #ptday,body.labfs-on #ptday{display:none!important}
+:fullscreen #ptday,:-webkit-full-screen #ptday{display:none!important}
+.card.test-focus{border-color:var(--accent);box-shadow:0 0 0 2px color-mix(in srgb,var(--accent) 40%,transparent)}
+.rating-card label{display:block;margin:8px 0 4px}
+#ptday .rating-card{margin:8px 0}
 </style>
 <script>
 (function(){
@@ -344,6 +359,7 @@ apply(load());
 <script src="theme.js"></script>
 <script src="credits.js"></script>
 <script src="tour.js"></script>
+<script src="dayprompt.js"></script>
 <script src="app.js"></script>
 <script>if('serviceWorker' in navigator){navigator.serviceWorker.register('sw.js')}</script>
 </body>

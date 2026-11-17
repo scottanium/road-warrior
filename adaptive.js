@@ -101,16 +101,34 @@ const TESTS = [
 ];
 const Lg = (k, d) => { try { return JSON.parse(localStorage.getItem(k)) ?? d; } catch (e) { return d; } };
 const Sg = (k, v) => localStorage.setItem(k, JSON.stringify(v));
-const DEFPROF = { fargo: 500, useFargo: true, self: "E", hand: "R", eye: "R", cross: true, days: 5, hours: 3, games: ["8","9","10","sp"], weak: ["aimR"], jm: false, mode: "built", tbl: 9 };
-const prof = () => Object.assign({}, DEFPROF, Lg("pt_profile", {}));
+const DEFPROF = { fargo: 500, useFargo: true, self: "E", hand: "R", eye: "R", cross: true, days: 5, hours: 3, games: ["8","9","10","sp"], weak: ["aimR"], jm: false, mode: "built", tbl: 9, csi: "", otherRating: "", ratingSet: true };
+const NEWPROF = { fargo: 425, useFargo: false, self: "I", hand: "R", eye: "R", cross: false, days: 5, hours: 3, games: ["8","9","10"], weak: [], jm: false, mode: "built", tbl: 9, csi: "", otherRating: "", ratingSet: false };
+const hasProfile = () => { try { return localStorage.getItem("pt_profile") != null; } catch (e) { return false; } };
+const prof = () => Object.assign({}, hasProfile() ? DEFPROF : NEWPROF, Lg("pt_profile", {}));
 const fOf = (p) => p.useFargo ? +p.fargo || 500 : SELF_F[p.self] || 500;
+const hasSavedRating = (p) => {
+  let s = null;
+  try { s = JSON.parse(localStorage.getItem("pt_profile")); } catch (e) { s = null; }
+  if (!s) return false;
+  if (s.ratingSet) return true;
+  if (s.useFargo && s.fargo != null && s.fargo !== "") return true;
+  if (s.useFargo === false && s.self) return true;
+  return false;
+};
+const skillFargo = (p) => hasSavedRating(p) ? fOf(p) : (SELF_F.I || 425);
+const skillLabel = (p) => {
+  const f = skillFargo(p);
+  if (hasSavedRating(p)) return LVN[LV(f)] + " (Fargo " + f + (p.useFargo ? "" : ", self-rated") + ")";
+  return "Intermediate (estimated — add your Fargo or level for a tighter fit)";
+};
+const FARGO_LOOKUP = "https://fairmatch.fargorate.com/";
 const scores = () => Lg("pt_tests", {}); // id -> [{d, raw}]
 const latest = (id) => { const a = scores()[id]; return a && a.length ? a[a.length-1] : null; };
 const bench = (t, f) => t.curve === "hq" ? CURVES.hq(f) : t.curve === "sp" ? Math.min(100, CURVES.sp(f)) : CURVES[t.curve](f, t.max);
 const norm = (t, raw) => Math.max(0, Math.min(100, Math.round(raw / t.max * 100)));
 const BASIS = { sourced: "Sourced benchmark", derived: "Derived from a sourced chart", estimate: "App estimate" };
 function areaStats(p){
-  const f = fOf(p), out = {};
+  const f = skillFargo(p), out = {};
   Object.keys(AREAS).forEach((a) => {
     if (a === "jm" && !p.jm) return;
     const ts = TESTS.filter((t) => t.area === a);
@@ -207,7 +225,7 @@ function generate(p, keep){
     out.days.push({ day: d.day, blocks: seq });
   });
   const top = ranked.slice(0, 3).map(([k, s]) => `${s.name}${s.score == null ? " (not tested)" : " (" + s.score + "/100)"}`);
-  out.why = `Level ${LVN[LV(fOf(p))]} (Fargo ${fOf(p)}${p.useFargo ? "" : ", self-rated"}). Biggest gaps to the next level: ${top.join("; ")}. Weekly time: ${days.length} days × ${hm(total)} h. Fundamentals and a fun game block are kept every day.`;
+  out.why = `Level ${skillLabel(p)}. Biggest gaps to the next level: ${top.join("; ")}. Weekly time: ${days.length} days × ${hm(total)} h. Fundamentals and a fun game block are kept every day.`;
   out.weekMin = {}; out.days.forEach((d) => d.blocks.forEach((b) => { if (b.area) out.weekMin[b.area] = (out.weekMin[b.area] || 0) + b.min; }));
   out.retest = retestDue.map((t) => t.id);
   return out;
@@ -271,8 +289,107 @@ function ratings(f){
   ];
 }
 
+function usefulTests(p){
+  p = p || prof();
+  const A = areaStats(p);
+  const ranked = Object.entries(A).sort((a, b) => b[1].gap - a[1].gap).map(([k]) => k);
+  const pl = Lg("pt_aplan", null);
+  const due = new Set((pl && pl.retest) || []);
+  const list = TESTS.filter((t) => !t.overall && (!t.optional || p.jm) && t.area && A[t.area]);
+  const rank = (t) => {
+    const l = latest(t.id);
+    const w = ranked.indexOf(t.area);
+    const weak = w < 0 ? 99 : w;
+    const age = l ? (Date.now() - new Date(l.d).getTime()) / 864e5 : 1e9;
+    const dueNow = !l || due.has(t.id) || age >= (ranked.slice(0, 3).includes(t.area) ? 14 : 28);
+    if (!l) return weak;
+    if (dueNow) return 100 + weak;
+    return 200 + weak;
+  };
+  return list.slice().sort((a, b) => rank(a) - rank(b) || a.name.localeCompare(b.name)).slice(0, 5);
+}
+function ratingSummary(p){
+  p = p || prof();
+  const f = skillFargo(p), set = hasSavedRating(p);
+  if (!set) return { f, lvl: "Intermediate", set: false, text: "No rating entered yet — workouts use Intermediate until you add one." };
+  const bits = [];
+  if (p.useFargo) bits.push("Fargo " + fOf(p));
+  else bits.push("Self-rated " + (LVN[p.self] || "Intermediate"));
+  if (p.csi) bits.push("CSI/BCAPL " + p.csi);
+  if (p.otherRating) bits.push(p.otherRating);
+  return { f, lvl: LVN[LV(f)], set: true, text: bits.join(" · ") };
+}
+function ratingCardHTML(esc, opts){
+  opts = opts || {};
+  const p = prof(), id = opts.id || "rt", sum = ratingSummary(p);
+  const showFargo = !!(p.useFargo && sum.set);
+  const selfVal = sum.set && !p.useFargo ? p.self : "I";
+  const fVal = showFargo ? (p.fargo || "") : "";
+  return `<div class="card rating-card" data-rating-card="${esc(id)}">
+    <div class="t">Your rating</div>
+    <div class="meta">${esc(sum.set ? ("App level: " + sum.lvl + " · " + sum.text) : sum.text)}</div>
+    <label class="tog"><input type="checkbox" data-rt="uf" ${showFargo ? "checked" : ""}> I know my Fargo rating</label>
+    <div data-rt="fw" ${showFargo ? "" : "hidden"}><label>Fargo<input type="number" data-rt="f" min="100" max="850" step="1" value="${esc(fVal)}" placeholder="e.g. 500" inputmode="numeric"></label></div>
+    <div data-rt="sw" ${showFargo ? "hidden" : ""}><label>Estimated level<select data-rt="s">${Object.entries(LVN).map(([k, v]) => `<option value="${k}" ${selfVal===k?"selected":""}>${v}</option>`).join("")}</select></label></div>
+    <div class="row"><a class="btn ghost" href="${esc(FARGO_LOOKUP)}" target="_blank" rel="noopener">Look up my Fargo</a></div>
+    <div class="meta">${opts.compact ? "Opens FargoRate's official player search. Type the number back here — the app can't log in and fill it for you." : "Opens FargoRate's official player search in a new tab. Copy your number back here — this app can't log into FargoRate and fill it in for you."}</div>
+    <details ${p.csi || p.otherRating ? "open" : ""}><summary>Other ratings (optional)</summary><div class="inner">
+      <label>CSI / BCAPL skill level<input type="text" data-rt="csi" value="${esc(p.csi || "")}" placeholder="e.g. B+ or 8"></label>
+      <label>Other (UPL, NAPA, TAP, custom)<input type="text" data-rt="other" value="${esc(p.otherRating || "")}" placeholder="e.g. UPL 500"></label>
+    </div></details>
+    <div class="meta" data-rt="lv"></div>
+    ${opts.saveBtn === false ? "" : `<div class="row"><button type="button" class="btn" data-rt="save">${esc(opts.saveLabel || "Save rating")}</button></div>`}
+  </div>`;
+}
+function saveRatingFromCard(root, opts){
+  opts = opts || {};
+  if (!root) return null;
+  const $r = (s) => root.querySelector('[data-rt="' + s + '"]');
+  const uf = !!($r("uf") && $r("uf").checked);
+  const rawF = $r("f") ? $r("f").value.trim() : "";
+  if (uf && !rawF && !opts.allowEmptyFargo) {
+    if ($r("f")) { $r("f").focus(); $r("f").style.borderColor = "#d55"; }
+    return false;
+  }
+  const cur = prof();
+  const n = Object.assign({}, cur, {
+    useFargo: uf,
+    fargo: rawF ? +rawF : (cur.fargo || 425),
+    self: ($r("s") && $r("s").value) || cur.self || "I",
+    csi: (($r("csi") && $r("csi").value) || "").trim(),
+    otherRating: (($r("other") && $r("other").value) || "").trim(),
+    ratingSet: true
+  });
+  if (uf && !rawF) n.ratingSet = hasSavedRating(n) || !!cur.ratingSet;
+  Sg("pt_profile", n);
+  Sg("pt_aplan", generate(n, Lg("pt_aplan", null)));
+  return n;
+}
+function wireRatingCard(root, onSave){
+  if (!root) return;
+  const $r = (s) => root.querySelector('[data-rt="' + s + '"]');
+  const lv = () => {
+    if (!$r("lv") || !$r("uf")) return;
+    const uf = $r("uf").checked;
+    const f = uf ? +($r("f") && $r("f").value) || 0 : SELF_F[($r("s") && $r("s").value) || "I"] || 425;
+    $r("lv").textContent = f ? ("App level: " + LVN[LV(f)] + " · Fargo " + f + (uf ? "" : " (from self-rated level)")) : "";
+  };
+  if ($r("uf")) $r("uf").onchange = () => { if ($r("fw")) $r("fw").hidden = !$r("uf").checked; if ($r("sw")) $r("sw").hidden = $r("uf").checked; lv(); };
+  if ($r("f")) $r("f").oninput = lv;
+  if ($r("s")) $r("s").onchange = lv;
+  lv();
+  if ($r("save")) $r("save").onclick = () => {
+    const n = saveRatingFromCard(root);
+    if (n === false) return;
+    $r("save").textContent = "Saved ✓";
+    setTimeout(() => { const b = $r("save"); if (b) b.textContent = b.dataset.label || "Save rating"; }, 1500);
+    if (typeof onSave === "function") onSave(n);
+  };
+}
+
 // ---------- UI ----------
 function A_ui($, esc, url, vbtns, save, st, rerender){
+
   const srcBtns = (list) => (list || []).map(([l, u]) => `<a class="btn ghost2" href="${esc(url(u))}" target="_blank" rel="noopener">📄 ${esc(l)}</a>`).join("");
   const vb = (list) => vbtns((list || []).map(([l, id]) => [l, id]));
   function renderProfile(){
@@ -281,11 +398,15 @@ function A_ui($, esc, url, vbtns, save, st, rerender){
     $("#headx").innerHTML = "";
     const g = (k) => p.games.includes(k) ? "checked" : "";
     const w = (k) => p.weak.includes(k) ? "checked" : "";
-    let h = `<div class="callout">These settings drive the adaptive plan, the tests' level targets and the warm-up. They start with Scott's settings; change anything.</div>
-    <div class="card"><div class="t">Level</div>
+    let h = `<div class="callout">These settings drive the adaptive plan, the tests' level targets and the warm-up. If you know your Fargo, add it here (or look it up on FargoRate). Change anything that doesn't fit you.</div>
+    <div class="card"><div class="t">Level and rating</div>
       <label class="tog"><input type="checkbox" id="pf_uf" ${p.useFargo ? "checked" : ""}> I know my Fargo rating</label>
-      <div id="pf_fw" ${p.useFargo ? "" : "hidden"}><input type="number" id="pf_f" min="100" max="850" step="1" value="${esc(p.fargo)}"></div>
-      <div id="pf_sw" ${p.useFargo ? "hidden" : ""}><select id="pf_s">${Object.entries(LVN).map(([k, v]) => `<option value="${k}" ${p.self===k?"selected":""}>${v}</option>`).join("")}</select></div>
+      <div id="pf_fw" ${p.useFargo ? "" : "hidden"}><label>Fargo<input type="number" id="pf_f" min="100" max="850" step="1" value="${esc(p.fargo)}" placeholder="e.g. 500"></label>
+      <div class="row"><a class="btn ghost" href="${esc(FARGO_LOOKUP)}" target="_blank" rel="noopener">Look up my Fargo</a></div>
+      <div class="meta">Opens FargoRate's official player search in a new tab. Copy your number back here — this app can't log into FargoRate and fill it in for you.</div></div>
+      <div id="pf_sw" ${p.useFargo ? "hidden" : ""}><label>Estimated level<select id="pf_s">${Object.entries(LVN).map(([k, v]) => `<option value="${k}" ${p.self===k?"selected":""}>${v}</option>`).join("")}</select></label></div>
+      <label>CSI / BCAPL skill level (optional)<input type="text" id="pf_csi" value="${esc(p.csi || "")}" placeholder="e.g. B+ or 8"></label>
+      <label>Other rating (optional)<input type="text" id="pf_other" value="${esc(p.otherRating || "")}" placeholder="e.g. UPL 500"></label>
       <div class="meta" id="pf_lv"></div></div>
     <div class="card"><div class="t">Handedness and eyes</div>
       <div class="row"><label>Shoots<select id="pf_h"><option value="R" ${p.hand==="R"?"selected":""}>Right-handed</option><option value="L" ${p.hand==="L"?"selected":""}>Left-handed</option></select></label>
@@ -306,30 +427,39 @@ function A_ui($, esc, url, vbtns, save, st, rerender){
     $("#pf_uf").onchange = () => { $("#pf_fw").hidden = !$("#pf_uf").checked; $("#pf_sw").hidden = $("#pf_uf").checked; lv(); };
     $("#pf_f").oninput = lv; $("#pf_s").onchange = lv; lv();
     $("#pf_save").onclick = () => {
-      const n = { fargo: +$("#pf_f").value || 500, useFargo: $("#pf_uf").checked, self: $("#pf_s").value, hand: $("#pf_h").value, eye: $("#pf_e").value, cross: $("#pf_c").checked, days: +$("#pf_d").value, hours: +$("#pf_hr").value,
-        games: [...document.querySelectorAll(".pf_g:checked")].map((x) => x.value), weak: [...document.querySelectorAll(".pf_w:checked")].map((x) => x.value), jm: $("#pf_jm").checked, mode: (document.querySelector("[name=pf_m]:checked") || {}).value || "built" };
-      Sg("pt_profile", n); Sg("pt_aplan", generate(Object.assign({}, DEFPROF, n), Lg("pt_aplan", null)));
+      const n = Object.assign({}, prof(), { fargo: +$("#pf_f").value || 500, useFargo: $("#pf_uf").checked, self: $("#pf_s").value, hand: $("#pf_h").value, eye: $("#pf_e").value, cross: $("#pf_c").checked, days: +$("#pf_d").value, hours: +$("#pf_hr").value,
+        games: [...document.querySelectorAll(".pf_g:checked")].map((x) => x.value), weak: [...document.querySelectorAll(".pf_w:checked")].map((x) => x.value), jm: $("#pf_jm").checked, mode: (document.querySelector("[name=pf_m]:checked") || {}).value || "built",
+        csi: ($("#pf_csi") && $("#pf_csi").value || "").trim(), otherRating: ($("#pf_other") && $("#pf_other").value || "").trim(), ratingSet: true });
+      Sg("pt_profile", n); Sg("pt_aplan", generate(n, Lg("pt_aplan", null)));
       $("#pf_save").textContent = "Saved ✓"; setTimeout(() => { const b = $("#pf_save"); if (b) b.textContent = "Save and rebuild the adaptive plan"; }, 1500);
     };
-    $("#pf_reset").onclick = () => { if (!confirm("Reset the profile to Scott's defaults? Test scores are kept.")) return; localStorage.removeItem("pt_profile"); Sg("pt_aplan", generate(DEFPROF)); renderProfile(); };
+    $("#pf_reset").onclick = () => { if (!confirm("Reset the profile to Scott's defaults? Test scores are kept.")) return; Sg("pt_profile", Object.assign({}, DEFPROF)); Sg("pt_aplan", generate(DEFPROF)); renderProfile(); };
   }
   function renderTests(){
-    const p = prof(), f = fOf(p), A = areaStats(p), sc = scores();
+    const p = prof(), f = skillFargo(p), A = areaStats(p), sc = scores();
     $("#title").textContent = "Skill Tests";
     const sel = st.tarea || "all";
     $("#headx").innerHTML = `<div class="chips"><button class="chip ${sel==="all"?"on":""}" data-ta="all">All</button>${Object.entries(AREAS).filter(([k]) => k !== "jm" || p.jm).map(([k, v]) => `<button class="chip ${sel===k?"on":""}" data-ta="${k}">${esc(v.split(" (")[0])}</button>`).join("")}</div>`;
     document.querySelectorAll("[data-ta]").forEach((b) => b.onclick = () => { st.tarea = b.dataset.ta; renderTests(); });
-    let h = `<div class="callout">Each test gives a 0–100 score. The level marks come from the Billiard University rating chart and other sources; each card says whether its benchmark is sourced, derived from a sourced chart, or an app estimate. Your level: <b>${LVN[LV(f)]}</b> (Fargo ${f}). <a href="#" id="t_prof">Change in Profile</a></div>`;
+    let h = `<div class="callout">Each test gives a 0–100 score. The level marks come from the Billiard University rating chart and other sources; each card says whether its benchmark is sourced, derived from a sourced chart, or an app estimate. Your level: <b>${esc(skillLabel(p))}</b>. <a href="#" id="t_prof">Change in Profile</a></div>`;
+    const focus = st.dayTests || null;
+    if (focus && focus.length) {
+      const fn = focus.map((id) => { const t = TESTS.find((x) => x.id === id); return t ? t.name.replace(", set up as a ", " ").split(" (")[0] : id; });
+      h += `<div class="callout" id="t_focus">Your results shape today's workout. Start with these checks: <b>${fn.map(esc).join(", ")}</b>. Save a score, then build the plan.</div>
+      <div class="row"><button class="btn" id="t_build">Build today's workout</button><button class="btn ghost" id="t_all">Show all tests</button></div>`;
+    }
     const rows = Object.entries(A).sort((a, b) => b[1].gap - a[1].gap);
     h += `<details ${sel==="all"?"open":""}><summary>Your areas, weakest first</summary><div class="inner"><table><tr><th>Area</th><th>Score</th><th>Your level</th><th>Next level</th></tr>${rows.map(([k, s]) => `<tr><td>${esc(s.name)}</td><td>${s.score == null ? "—" : s.score}</td><td>${s.exp}</td><td>${s.tgt}</td></tr>`).join("")}</table>`;
     if (A.aimR && A.aimL && A.aimR.score != null && A.aimL.score != null) h += `<div class="meta">Right vs left cuts: ${A.aimR.score} vs ${A.aimL.score} (${A.aimR.score < A.aimL.score ? "right side weaker" : A.aimR.score > A.aimL.score ? "left side weaker" : "even"}).</div>`;
     h += `<div class="meta">"—" means not tested yet. Tests due for a retest are marked ⏰ below.</div></div></details>`;
     const pl = Lg("pt_aplan", null), due = pl && pl.retest ? pl.retest : [];
-    TESTS.filter((t) => (!t.optional || p.jm) && (sel === "all" || t.area === sel)).forEach((t) => {
+    const tlist = TESTS.filter((t) => (!t.optional || p.jm) && (sel === "all" || t.area === sel));
+    if (focus && focus.length && sel === "all") tlist.sort((a, b) => (focus.indexOf(a.id) < 0 ? 99 : focus.indexOf(a.id)) - (focus.indexOf(b.id) < 0 ? 99 : focus.indexOf(b.id)));
+    tlist.forEach((t) => {
       const l = latest(t.id), b = norm(t, bench(t, f)), bn = norm(t, bench(t, Math.min(800, f + 75)));
       const hist = (sc[t.id] || []).slice(-5);
       const ra = l ? new Date(new Date(l.d).getTime() + (rows.slice(0, 3).some((r) => r[0] === t.area) ? 14 : 28) * 864e5).toISOString().slice(0, 10) : null;
-      h += `<div class="card" id="test-${t.id}"><div class="t">${due.includes(t.id) ? "⏰ " : ""}${esc(t.name)}</div><div class="meta">${esc(t.area ? AREAS[t.area] : "Overall")} · max ${t.max} · <span class="pill ${t.basis}">${BASIS[t.basis]}</span></div>
+      h += `<div class="card${focus && focus.includes(t.id) ? " test-focus" : ""}" id="test-${t.id}"><div class="t">${due.includes(t.id) ? "⏰ " : ""}${focus && focus.includes(t.id) ? "⭐ " : ""}${esc(t.name)}</div><div class="meta">${esc(t.area ? AREAS[t.area] : "Overall")} · max ${t.max} · <span class="pill ${t.basis}">${BASIS[t.basis]}</span></div>
       <div class="desc">${esc(t.how)}</div>
       <div class="meta">At your level expect about ${b}/100 (raw ≈ ${Math.round(bench(t, f) * 10) / 10}); next level ≈ ${bn}/100.</div>
       ${l ? `<div class="meta">Latest: ${l.raw}/${t.max} = <b>${norm(t, l.raw)}/100</b> on ${esc(l.d)}${hist.length > 1 ? " · last " + hist.length + ": " + hist.map((x) => norm(t, x.raw)).join(", ") : ""}${ra ? " · retest around " + ra : ""}</div>` : `<div class="meta">Not tested yet.</div>`}
@@ -339,6 +469,8 @@ function A_ui($, esc, url, vbtns, save, st, rerender){
     h += `<div class="callout">Also useful but not scored here: the <a href="${esc(url("/faq/drill/fargo/"))}" target="_blank" rel="noopener">Fargo rating drill (Mike Page)</a> and the full <a href="${BU}/testing/exams/" target="_blank" rel="noopener">BU exam set</a>.</div>`;
     $("#main").innerHTML = h;
     $("#t_prof").onclick = (e) => { e.preventDefault(); st.view = "prof"; save(); rerender(); };
+    const tb = $("#t_build"); if (tb) tb.onclick = () => { Sg("pt_aplan", generate(prof(), Lg("pt_aplan", null))); try { const d = JSON.parse(localStorage.getItem("pt_dayprompt") || "{}") || {}; d.date = new Date().toISOString().slice(0, 10); d.action = "tested"; d.useAdaptive = true; localStorage.setItem("pt_dayprompt", JSON.stringify(d)); } catch (e) {} st.dayTests = null; st.view = "today"; save(); rerender(); };
+    const ta = $("#t_all"); if (ta) ta.onclick = () => { st.dayTests = null; renderTests(); };
     document.querySelectorAll("[data-tsave]").forEach((b) => b.onclick = () => {
       const id = b.dataset.tsave, t = TESTS.find((x) => x.id === id), inp = document.querySelector(`[data-tin="${id}"]`), v = parseFloat(inp.value);
       if (isNaN(v) || v < 0 || v > t.max) { inp.focus(); inp.style.borderColor = "#d55"; return; }
@@ -381,9 +513,9 @@ function A_ui($, esc, url, vbtns, save, st, rerender){
   }
   const stopT = () => { if (window._wT) { clearInterval(window._wT); window._wT = null; } };
   function renderRatings(){
-    const p = prof(), f = fOf(p);
+    const p = prof(), f = skillFargo(p);
     $("#title").textContent = "Ratings & Rules";
-    $("#headx").innerHTML = `<div class="meta">Showing conversions for Fargo ${f}${p.useFargo ? "" : " (from your self-rated level)"} · <a href="#" id="r_prof">change</a></div>`;
+    $("#headx").innerHTML = `<div class="meta">Showing conversions for ${esc(skillLabel(p))} · <a href="#" id="r_prof">change</a> · <a href="${esc(FARGO_LOOKUP)}" target="_blank" rel="noopener">Look up my Fargo</a></div>`;
     let h = `<div class="callout">Conversions between systems are rough; the sources say they vary a lot by league and region. APA is not included.</div>`;
     h += ratings(f).map((r) => `<div class="card"><div class="t">${esc(r.n)}</div><div class="desc">${esc(r.what)}</div><div class="meta"><b>You:</b> ${esc(r.you)}${r.basis ? ` · <span class="pill ${/Derived/.test(r.basis) ? "derived" : "sourced"}">${esc(r.basis)}</span>` : ""}</div>
       <div class="vids">${r.rules ? `<a class="btn" href="${esc(r.rules[1])}" target="_blank" rel="noopener">📘 Official rules: ${esc(r.rules[0])}</a>` : ""}${r.rules2 ? `<a class="btn ghost2" href="${esc(r.rules2[1])}" target="_blank" rel="noopener">📘 ${esc(r.rules2[0])}</a>` : ""}${srcBtns(r.src)}</div>${r.diff ? `<details class="diffd"><summary>${esc(r.diffT)}</summary><div class="inner"><div class="meta">${esc(r.diffNote)}</div><ul>${r.diff.map((d) => `<li>${esc(d[0])}<div class="vids">${srcBtns(d[1])}</div></li>`).join("")}</ul></div></details>` : ""}</div>`).join("");
@@ -393,5 +525,5 @@ function A_ui($, esc, url, vbtns, save, st, rerender){
   }
   return { renderProfile, renderTests, renderAPlan, renderWarm, renderRatings, todayAdaptive, stopT };
 }
-window.Adaptive = { TESTS, AREAS, BUCHART, generate, areaStats, prof, DEFPROF, ratings, warmSteps, ui: A_ui, fOf, bench, norm, AV, GAMEV, WU };
+window.Adaptive = { TESTS, AREAS, BUCHART, generate, areaStats, prof, DEFPROF, NEWPROF, ratings, warmSteps, ui: A_ui, fOf, bench, norm, AV, GAMEV, WU, hasSavedRating, skillFargo, skillLabel, usefulTests, ratingCardHTML, wireRatingCard, ratingSummary, saveRatingFromCard, FARGO_LOOKUP, getPlan };
 })();
